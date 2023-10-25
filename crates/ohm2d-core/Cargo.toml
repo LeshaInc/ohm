@@ -1,0 +1,18 @@
+[package]
+name = "ohm2d-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+encase = { workspace = true }
+glam = { workspace = true }
+guillotiere = { workspace = true }
+image = { workspace = true }
+log = { workspace = true }
+self_cell = { workspace = true }
+slotmap = { workspace = true }
+smallvec = { workspace = true }
+ttf-parser = { workspace = true }
+unicode-bidi = { workspace = true }
+unicode-linebreak = { workspace = true }
