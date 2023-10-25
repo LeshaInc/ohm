@@ -40,7 +40,7 @@ pub struct RasterizedGlyph {
     pub offset: Vec2,
 }
 
-pub trait Rasterizer: Send + Sync + 'static {
+pub trait Rasterizer {
     fn rasterize(
         &mut self,
         font_face: &FontFace,
@@ -60,7 +60,7 @@ impl FontRasterizers {
         FontRasterizers::default()
     }
 
-    pub fn add<R: Rasterizer>(&mut self, rasterizer: R) {
+    pub fn add<R: Rasterizer + 'static>(&mut self, rasterizer: R) {
         self.rasterizers.push(Box::new(rasterizer));
     }
 }

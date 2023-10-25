@@ -75,6 +75,11 @@ impl<R: Renderer> Graphics<R> {
         self.font_db
             .add_source(ohm2d_fontdb::SystemFontSource::new());
         self.font_rasterizers.add(EmbeddedImageRasterizer);
+
+        #[cfg(feature = "freetype")]
+        self.font_rasterizers
+            .add(ohm2d_freetype::FreetypeRasterizer::new());
+
         #[cfg(feature = "zeno")]
         self.font_rasterizers.add(ohm2d_zeno::ZenoRasterizer::new());
     }
