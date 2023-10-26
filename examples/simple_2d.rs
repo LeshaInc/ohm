@@ -1,6 +1,6 @@
 use anyhow::Result;
 use ohm2d::math::{vec2, UVec2};
-use ohm2d::text::{FontFamilies, FontFamily, TextAttrs, TextBuffer};
+use ohm2d::text::{FontFamilies, FontFamily, TextAlign, TextAttrs, TextBuffer};
 use ohm2d::{
     Border, Color, Command, CornerRadii, DrawGlyph, DrawList, DrawRect, Fill, Graphics, Renderer,
 };
@@ -26,6 +26,7 @@ fn main() -> Result<()> {
 
     let attrs = TextAttrs {
         size: 20.0,
+        align: TextAlign::Right,
         fonts: FontFamilies::new(FontFamily::new("Open Sans"))
             .add(FontFamily::new("Noto Color Emoji"))
             .add(FontFamily::new("Noto Sans Symbols 2")),
@@ -33,7 +34,7 @@ fn main() -> Result<()> {
     };
 
     buffer.push(
-        attrs.clone(),
+        attrs,
         "Lorem ipsum dolor sit amet,\n\nThis 👭🎵🌘 also 😋🚣‍♂️🙇‍♂️ supports 🚥 emoji! 🚈🧤🩸♦︎😛🐕👨‍🦲⛷💫👡🏮🍷♗📽🌵➗🎄🕟 👢☄️👨‍🔧 Isn't it 🗻🍡 neat? 🦋👨‍🦯📕🎐🏩💙🚵‍♀️\n\nLorem ipsum... consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Accumsan lacus vel facilisis volutpat est velit egestas dui id. Leo duis ut diam quam nulla porttitor. Odio ut enim blandit volutpat maecenas. Amet mattis vulputate enim nulla aliquet porttitor lacus luctus accumsan. Dignissim suspendisse in est ante in nibh mauris cursus. Fermentum iaculis eu non diam phasellus vestibulum lorem sed risus. Dapibus ultrices in iaculis nunc sed augue. Vel risus commodo viverra maecenas accumsan lacus. Sed id semper risus in hendrerit gravida rutrum quisque. Id nibh tortor id aliquet lectus proin nibh. Ipsum a arcu cursus vitae congue mauris. Pellentesque id nibh tortor id aliquet lectus proin nibh. Sociis natoque penatibus et magnis dis parturient montes nascetur. Lacinia at quis risus sed vulputate odio. Id diam vel quam elementum pulvinar etiam non quam lacus. Tristique senectus et netus et malesuada fames."
     );
 

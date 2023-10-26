@@ -38,10 +38,13 @@ pub struct Run {
     pub glyph_range: Range<usize>,
     pub section_idx: usize,
     pub bidi_level: BidiLevel,
+    pub linebreak: Option<BreakOpportunity>,
     pub font: FontId,
     pub font_size: f32,
     pub line_height: f32,
     pub text_height: f32,
+    pub width: f32,
+    pub trailing_whitespace_width: f32,
     pub pos: Vec2,
 }
 
@@ -52,6 +55,7 @@ struct Line {
     width: f32,
     whitespace_width: f32,
     height: f32,
+    is_linebreak_forced: bool,
 }
 
 impl TextBuffer {
@@ -122,13 +126,13 @@ impl TextBuffer {
         self.lines.clear();
 
         self.compute_bidi();
-        self.split_runs();
+        self.split_runs_by_bidi_levels();
         self.shape_runs(font_db, shaper);
-        self.sort_runs();
-        self.break_words();
-        self.split_runs_by_lines();
-        self.measure_line_heights();
-        self.layout();
+        self.split_runs_by_words();
+        self.measure_runs();
+        self.break_lines();
+        self.measure_lines();
+        self.layout_lines();
 
         self.dirty = false;
     }
@@ -139,9 +143,9 @@ impl TextBuffer {
         self.bidi_paragraphs = bidi_info.paragraphs;
     }
 
-    fn split_runs(&mut self) {
+    fn split_runs_by_bidi_levels(&mut self) {
         for (section_idx, section) in self.sections.iter().enumerate() {
-            Self::split_bidi(
+            Self::split_bidi_helper(
                 &self.bidi_levels,
                 section.range.clone(),
                 |range, bidi_level| {
@@ -150,10 +154,13 @@ impl TextBuffer {
                         glyph_range: 0..0,
                         section_idx,
                         bidi_level,
+                        linebreak: None,
                         font: FontId::DUMMY,
                         font_size: 0.0,
                         line_height: 0.0,
                         text_height: 0.0,
+                        width: 0.0,
+                        trailing_whitespace_width: 0.0,
                         pos: Vec2::ZERO,
                     });
                 },
@@ -161,7 +168,7 @@ impl TextBuffer {
         }
     }
 
-    fn split_bidi(
+    fn split_bidi_helper(
         levels: &[BidiLevel],
         range: Range<usize>,
         mut callback: impl FnMut(Range<usize>, BidiLevel),
@@ -362,176 +369,168 @@ impl TextBuffer {
 
         self.runs
             .retain(|run| !run.range.is_empty() && !run.glyph_range.is_empty());
-    }
 
-    fn sort_runs(&mut self) {
         self.runs.sort_unstable_by_key(|run| run.range.start);
     }
 
-    fn break_words(&mut self) {
-        let mut line = Line::default();
+    fn split_runs_by_words(&mut self) {
+        // push splitted words at the end of self.runs, then remove old unsplitted runs
+
         let mut run_idx = 0;
-        let mut glyph_idx = 0;
+        let max_run_idx = self.runs.len();
 
-        let mut prev_break_opportunity = None;
-        let mut prev_trailing_whitespace_width = 0.0;
-
-        // dbg!(&self.runs);
-        // dbg!(&self.glyphs);
-
-        for (linebreak_idx, mut linebreak) in unicode_linebreak::linebreaks(&self.text) {
-            // measure text until linebreak
-
-            // dbg!(&self.text[..linebreak_idx]);
-            // dbg!(linebreak_idx);
-
-            let mut width = 0.0;
-            let mut trailing_whitespace_width = 0.0;
-
-            'measure: while run_idx < self.runs.len() {
-                let run = &self.runs[run_idx];
-                while glyph_idx < run.glyph_range.end {
-                    let glyph = &self.glyphs[glyph_idx];
-                    let cluster = glyph.cluster;
-                    // dbg!(cluster);
-                    if cluster >= linebreak_idx {
-                        break 'measure;
-                    }
-
-                    let char = self.text[glyph.cluster..].chars().next();
-                    let is_whitespace = char.is_some_and(char::is_whitespace);
-
-                    while glyph_idx < run.glyph_range.end {
-                        let glyph = &self.glyphs[glyph_idx];
-                        if glyph.cluster != cluster {
-                            break;
-                        }
-
-                        // dbg!(glyph_idx, glyph.x_advance);
-                        width += glyph.x_advance;
-
-                        if is_whitespace {
-                            trailing_whitespace_width = glyph.x_advance;
-                        } else {
-                            trailing_whitespace_width = 0.0;
-                        }
-
-                        glyph_idx += 1;
-                    }
-                }
-
-                run_idx += 1;
-
-                if let Some(run) = self.runs.get(run_idx) {
-                    glyph_idx = run.glyph_range.start;
-                }
-            }
-
-            width -= trailing_whitespace_width;
-
-            // if the segment fits and line break is not mandatory
-            //   add segment to this line
-            // if this segment doesn't fit
-            //   try to break line before this segment
-            //   otherwise break line after this segment, text will overflow
-
-            let fits = line.width + prev_trailing_whitespace_width + width <= self.max_width;
-
-            if fits {
-                line.width += prev_trailing_whitespace_width + width;
-                line.whitespace_width += prev_trailing_whitespace_width;
-            } else if !fits {
-                if let Some(idx) = prev_break_opportunity {
-                    line.range.end = idx;
-                    self.lines.push(line.clone());
-                    line.width = width;
-                    line.whitespace_width = 0.0;
-                    line.range.start = idx;
-                } else {
-                    linebreak = BreakOpportunity::Mandatory;
-                }
-            }
-
-            if linebreak == BreakOpportunity::Allowed {
-                prev_break_opportunity = Some(linebreak_idx);
-                prev_trailing_whitespace_width = trailing_whitespace_width;
-            } else {
-                line.range.end = linebreak_idx;
-                self.lines.push(line.clone());
-                line.width = 0.0;
-                line.whitespace_width = 0.0;
-                line.range.start = linebreak_idx;
-                prev_break_opportunity = None;
-                prev_trailing_whitespace_width = 0.0;
-            }
-        }
-    }
-
-    fn split_runs_by_lines(&mut self) {
-        let mut run_idx = 0;
-        let mut tmp_run_idx = 0;
-
-        for line in &mut self.lines {
-            let start_tmp_run_idx = tmp_run_idx;
-            let mut num_tmp_runs = 0;
-
-            while run_idx < self.runs.len() {
+        for (linebreak_idx, linebreak) in unicode_linebreak::linebreaks(&self.text) {
+            while run_idx < max_run_idx {
                 let run = &mut self.runs[run_idx];
-                if run.range.start >= line.range.end {
+                if run.range.start >= linebreak_idx {
                     break;
                 }
 
-                if run.range.end <= line.range.end {
-                    self.tmp_runs.push(run.clone());
+                let end = linebreak_idx.min(run.range.end);
+
+                let glyphs = &self.glyphs[run.glyph_range.clone()];
+                let glyph_end = glyphs
+                    .iter()
+                    .position(|v| v.cluster >= end)
+                    .map(|v| run.glyph_range.start + v)
+                    .unwrap_or(run.glyph_range.end);
+
+                let new_run = Run {
+                    range: run.range.start..end,
+                    glyph_range: run.glyph_range.start..glyph_end,
+                    linebreak: (end == linebreak_idx).then_some(linebreak),
+                    ..run.clone()
+                };
+
+                run.range.start = end;
+                run.glyph_range.start = glyph_end;
+
+                if run.range.is_empty() {
                     run_idx += 1;
-                    tmp_run_idx += 1;
-                    num_tmp_runs += 1;
-                } else if run.range.end > line.range.end {
-                    let old_end = run.range.end;
-                    let new_end = line.range.end;
-
-                    let old_glyph_end = run.glyph_range.end;
-                    let new_glyph_end = self.glyphs[run.glyph_range.clone()]
-                        .iter()
-                        .position(|g| g.cluster >= new_end)
-                        .map(|v| v + run.glyph_range.start)
-                        .unwrap_or(run.glyph_range.end);
-
-                    run.range.end = new_end;
-                    run.glyph_range.end = new_glyph_end;
-
-                    self.tmp_runs.push(run.clone());
-                    tmp_run_idx += 1;
-                    num_tmp_runs += 1;
-
-                    run.range.start = new_end;
-                    run.range.end = old_end;
-
-                    run.glyph_range.start = new_glyph_end;
-                    run.glyph_range.end = old_glyph_end;
-
-                    if run.range.is_empty() {
-                        run_idx += 1;
-                    }
                 }
-            }
 
-            line.run_range = start_tmp_run_idx..start_tmp_run_idx + num_tmp_runs;
+                self.runs.push(new_run);
+            }
         }
 
-        std::mem::swap(&mut self.runs, &mut self.tmp_runs);
+        self.runs.drain(..max_run_idx);
     }
 
-    fn measure_line_heights(&mut self) {
+    fn measure_runs(&mut self) {
+        for run in &mut self.runs {
+            for glyph in &self.glyphs[run.glyph_range.clone()] {
+                let char = self.text[glyph.cluster..].chars().next();
+                let is_whitespace = char.is_some_and(char::is_whitespace);
+
+                if is_whitespace {
+                    run.trailing_whitespace_width += glyph.x_advance;
+                } else {
+                    run.trailing_whitespace_width = 0.0;
+                }
+
+                run.width += glyph.x_advance;
+            }
+
+            run.width -= run.trailing_whitespace_width;
+        }
+    }
+
+    fn break_lines(&mut self) {
+        let mut line = Line::default();
+        let mut prev_trailing_whitespace = 0.0;
+        let mut prev_break_opportunity = None;
+
+        for (run_idx, run) in self.runs.iter().enumerate() {
+            let fits = line.width + prev_trailing_whitespace + run.width <= self.max_width;
+
+            if fits {
+                line.width += prev_trailing_whitespace + run.width;
+                prev_trailing_whitespace = run.trailing_whitespace_width;
+            } else if let Some(idx) = prev_break_opportunity {
+                let prev_runs = self.runs[idx..run_idx].iter().enumerate();
+                let extra_width = prev_runs
+                    .map(|(i, run)| {
+                        if i == 0 && idx + 1 != run_idx {
+                            run.trailing_whitespace_width
+                        } else if i > 0 {
+                            run.width + run.trailing_whitespace_width
+                        } else {
+                            0.0
+                        }
+                    })
+                    .sum::<f32>();
+
+                line.width -= extra_width;
+                line.run_range.end = idx + 1;
+
+                self.lines.push(line.clone());
+
+                line.run_range.start = idx + 1;
+                line.width = extra_width + run.width;
+            }
+
+            match run.linebreak {
+                Some(BreakOpportunity::Mandatory) => {}
+                Some(BreakOpportunity::Allowed) => {}
+                None => {}
+            }
+
+            if run.linebreak == Some(BreakOpportunity::Mandatory) {
+                line.is_linebreak_forced = true;
+                line.run_range.end = run_idx + 1;
+                self.lines.push(line.clone());
+                line.is_linebreak_forced = false;
+                line.run_range.start = run_idx + 1;
+                line.width = 0.0;
+                prev_trailing_whitespace = 0.0;
+                prev_break_opportunity = None;
+            }
+
+            if run.linebreak == Some(BreakOpportunity::Allowed) {
+                prev_break_opportunity = Some(run_idx);
+            }
+        }
+
+        line.run_range.end = self.runs.len();
+        if !line.run_range.is_empty() {
+            self.lines.push(line);
+        }
+
+        self.lines.retain(|v| !v.run_range.is_empty());
+
+        for line in &mut self.lines {
+            line.range = self.runs[line.run_range.start].range.start
+                ..self.runs[line.run_range.end - 1].range.end;
+        }
+    }
+
+    fn measure_lines(&mut self) {
         for line in &mut self.lines {
             line.height = self.runs[line.run_range.clone()]
                 .iter()
                 .map(|v| v.line_height)
                 .fold(0.0, f32::max);
+
+            let glyphs = self.runs[line.run_range.clone()]
+                .iter()
+                .flat_map(|run| self.glyphs[run.glyph_range.clone()].iter());
+
+            let text = &self.text[line.range.clone()];
+            let max_cluster = line.range.start + text.trim_end().len();
+
+            for glyph in glyphs {
+                let char = self.text[glyph.cluster..].chars().next();
+                let is_whitespace = char.is_some_and(char::is_whitespace);
+
+                // ignore trailing line whitespace
+                if glyph.cluster < max_cluster && is_whitespace {
+                    line.whitespace_width += glyph.x_advance;
+                }
+            }
         }
     }
 
-    fn layout(&mut self) {
+    fn layout_lines(&mut self) {
         let max_width = if self.max_width.is_finite() {
             self.max_width
         } else {
@@ -556,7 +555,7 @@ impl TextBuffer {
                 TextAlign::Justify => 0.0,
             };
 
-            let whitespace_stretch = if align == TextAlign::Justify {
+            let whitespace_stretch = if align == TextAlign::Justify && !line.is_linebreak_forced {
                 1.0 + (max_width - line.width) / line.whitespace_width
             } else {
                 1.0
@@ -575,10 +574,9 @@ impl TextBuffer {
                         glyph_range_end = run.glyph_range.start + i;
                     }
 
-                    let is_whitespace = self.text[glyph.cluster..]
-                        .chars()
-                        .next()
-                        .is_some_and(char::is_whitespace);
+                    let char = self.text[glyph.cluster..].chars().next();
+                    let is_whitespace = char.is_some_and(char::is_whitespace);
+
                     pos.x += if is_whitespace {
                         glyph.x_advance * whitespace_stretch
                     } else {
