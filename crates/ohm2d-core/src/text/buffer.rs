@@ -720,11 +720,11 @@ impl TextBuffer {
                     let char = self.text[glyph.cluster..].chars().next();
                     let is_whitespace = char.is_some_and(char::is_whitespace);
 
-                    pos.x += if is_whitespace {
-                        glyph.x_advance * whitespace_stretch
-                    } else {
-                        glyph.x_advance
-                    };
+                    if is_whitespace {
+                        glyph.x_advance *= whitespace_stretch;
+                    }
+
+                    pos.x += glyph.x_advance;
                 }
             }
 
