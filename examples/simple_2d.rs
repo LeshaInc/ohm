@@ -1,6 +1,6 @@
 use anyhow::Result;
 use ohm2d::math::{vec2, UVec2};
-use ohm2d::text::{FontFamilies, FontFamily, TextAlign, TextAttrs, TextBuffer};
+use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm2d::{
     Border, Color, Command, CornerRadii, DrawGlyph, DrawList, DrawRect, Fill, Graphics, Renderer,
 };
@@ -26,16 +26,27 @@ fn main() -> Result<()> {
 
     let attrs = TextAttrs {
         size: 20.0,
-        align: TextAlign::Right,
+        line_height: LineHeight::Relative(1.3),
+        align: TextAlign::Justify,
         fonts: FontFamilies::new(FontFamily::new("Open Sans"))
             .add(FontFamily::new("Noto Color Emoji"))
-            .add(FontFamily::new("Noto Sans Symbols 2")),
+            .add(FontFamily::new("DejaVu Sans")),
         ..Default::default()
     };
 
     buffer.push(
+        attrs.clone(),
+        "This 👭🎵🌘 also 😋🚣‍♂️🙇‍♂️ supports 🚥 emoji! 🚈🧤🩸♦︎😛🐕👨‍🦲⛷💫👡🏮🍷♗📽🌵➗🎄🕟 👢☄️👨‍🔧 Isn't it 🗻🍡 neat? 🦋👨‍🦯📕🎐🏩💙🚵‍♀️\n\nLorem ipsum dolor sit amet, eam ad fugit vocibus, quo autem consul definitionem ex, at sed melius appetere. Ne duis numquam fabulas his, sit etiam mediocritatem no, no nec diam possit scaevola. Dicta viris eirmod ius cu, elit scribentur id vim, mei et elitr iudicabit necessitatibus. Ius ad augue invidunt, ius cu paulo aliquam, id enim euismod contentiones eum. Cum an omnium consulatu scriptorem, te vim mundi copiosae.\n\n"
+    );
+
+    buffer.push(
+        attrs.clone(),
+        "يكن تحرير الأمم البرية قد. في فصل أراض الأمريكية, أن بأيدي تزامناً الموسوعة شيء. هذا قد الشتوية تزامناً, ان يكن يقوم كنقطة الدنمارك, الشرقي الطريق باستخدام دنو ثم. كل نهاية العالمية سنغافورة قام, من نفس حاول مكثّفة الشرقية. أن فقد وبغطاء الإمتعاض الإقتصادية, بـ تُصب قِبل اكتوبر دار. ذلك في تجهيز النفط الإقتصادية.\n\n",
+    );
+
+    buffer.push(
         attrs,
-        "Lorem ipsum dolor sit amet,\n\nThis 👭🎵🌘 also 😋🚣‍♂️🙇‍♂️ supports 🚥 emoji! 🚈🧤🩸♦︎😛🐕👨‍🦲⛷💫👡🏮🍷♗📽🌵➗🎄🕟 👢☄️👨‍🔧 Isn't it 🗻🍡 neat? 🦋👨‍🦯📕🎐🏩💙🚵‍♀️\n\nLorem ipsum... consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Accumsan lacus vel facilisis volutpat est velit egestas dui id. Leo duis ut diam quam nulla porttitor. Odio ut enim blandit volutpat maecenas. Amet mattis vulputate enim nulla aliquet porttitor lacus luctus accumsan. Dignissim suspendisse in est ante in nibh mauris cursus. Fermentum iaculis eu non diam phasellus vestibulum lorem sed risus. Dapibus ultrices in iaculis nunc sed augue. Vel risus commodo viverra maecenas accumsan lacus. Sed id semper risus in hendrerit gravida rutrum quisque. Id nibh tortor id aliquet lectus proin nibh. Ipsum a arcu cursus vitae congue mauris. Pellentesque id nibh tortor id aliquet lectus proin nibh. Sociis natoque penatibus et magnis dis parturient montes nascetur. Lacinia at quis risus sed vulputate odio. Id diam vel quam elementum pulvinar etiam non quam lacus. Tristique senectus et netus et malesuada fames."
+        "אם היא אודות ספרדית משפטים, או פנאי קהילה אתה, ספורט מיזמים אל שמו. כתב יוני למנוע העזרה של, אחד או הבהרה המקושרים, אל ואמנות רומנית ותשובות שמו.\n"
     );
 
     event_loop.run(move |event, elwt| match event {

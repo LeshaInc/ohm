@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use smallvec::SmallVec;
-use unicode_bidi::{BidiInfo, Level as BidiLevel, ParagraphInfo as BidiParagraph};
+use unicode_bidi::{BidiInfo, Level as BidiLevel};
 use unicode_linebreak::BreakOpportunity;
 
 use crate::math::Vec2;
@@ -14,12 +14,10 @@ use crate::text::{
 pub struct TextBuffer {
     text: String,
     sections: Vec<Section>,
-    bidi_levels: Vec<BidiLevel>,
-    bidi_paragraphs: Vec<BidiParagraph>,
     runs: Vec<Run>,
-    tmp_runs: Vec<Run>,
     glyphs: Vec<ShapedGlyph>,
     lines: Vec<Line>,
+    scratch_indices: Vec<usize>,
     max_width: f32,
     height: f32,
     dirty: bool,
@@ -52,6 +50,7 @@ pub struct Run {
 struct Line {
     range: Range<usize>,
     run_range: Range<usize>,
+    is_rtl: bool,
     width: f32,
     whitespace_width: f32,
     height: f32,
@@ -63,12 +62,10 @@ impl TextBuffer {
         TextBuffer {
             text: String::new(),
             sections: Vec::new(),
-            bidi_levels: Vec::new(),
-            bidi_paragraphs: Vec::new(),
             runs: Vec::new(),
-            tmp_runs: Vec::new(),
             glyphs: Vec::new(),
             lines: Vec::new(),
+            scratch_indices: Vec::new(),
             max_width: f32::INFINITY,
             height: 0.0,
             dirty: true,
@@ -78,12 +75,10 @@ impl TextBuffer {
     pub fn reset(&mut self) {
         self.text.clear();
         self.sections.clear();
-        self.bidi_levels.clear();
-        self.bidi_paragraphs.clear();
         self.runs.clear();
-        self.tmp_runs.clear();
         self.glyphs.clear();
         self.lines.clear();
+        self.scratch_indices.clear();
         self.max_width = f32::INFINITY;
         self.height = 0.0;
         self.dirty = false;
@@ -118,35 +113,29 @@ impl TextBuffer {
             return;
         }
 
-        self.bidi_levels.clear();
-        self.bidi_paragraphs.clear();
         self.runs.clear();
-        self.tmp_runs.clear();
         self.glyphs.clear();
         self.lines.clear();
+        self.scratch_indices.clear();
 
-        self.compute_bidi();
         self.split_runs_by_bidi_levels();
         self.shape_runs(font_db, shaper);
         self.split_runs_by_words();
         self.measure_runs();
         self.break_lines();
         self.measure_lines();
+        self.bidi_reorder_runs();
         self.layout_lines();
 
         self.dirty = false;
     }
 
-    fn compute_bidi(&mut self) {
-        let bidi_info = BidiInfo::new(&self.text, None);
-        self.bidi_levels = bidi_info.levels;
-        self.bidi_paragraphs = bidi_info.paragraphs;
-    }
-
     fn split_runs_by_bidi_levels(&mut self) {
+        let bidi_info = BidiInfo::new(&self.text, None);
+
         for (section_idx, section) in self.sections.iter().enumerate() {
             Self::split_bidi_helper(
-                &self.bidi_levels,
+                &bidi_info.levels,
                 section.range.clone(),
                 |range, bidi_level| {
                     self.runs.push(Run {
@@ -244,9 +233,16 @@ impl TextBuffer {
                 };
 
                 let glyphs_start = self.glyphs.len();
-                shaper.shape(font, text, font_size, &mut self.glyphs);
-                let glyphs_end = self.glyphs.len();
 
+                shaper.shape(
+                    font,
+                    text,
+                    font_size,
+                    run.bidi_level.is_rtl(),
+                    &mut self.glyphs,
+                );
+
+                let glyphs_end = self.glyphs.len();
                 let glyphs = &mut self.glyphs[glyphs_start..glyphs_end];
 
                 for glyph in glyphs.iter_mut() {
@@ -344,7 +340,7 @@ impl TextBuffer {
                     num_splits += 1;
                 }
 
-                if prev_glyph_i != glyphs_start && prev_glyph_i != glyphs_end {
+                if prev_glyph_i != glyphs_start && prev_range_end < run.range.end {
                     self.runs.push(Run {
                         range: prev_range_end..run.range.end,
                         glyph_range: 0..0,
@@ -448,7 +444,7 @@ impl TextBuffer {
                 prev_trailing_whitespace = run.trailing_whitespace_width;
             } else if let Some(idx) = prev_break_opportunity {
                 let prev_runs = self.runs[idx..run_idx].iter().enumerate();
-                let extra_width = prev_runs
+                let subtract_width = prev_runs
                     .map(|(i, run)| {
                         if i == 0 && idx + 1 != run_idx {
                             run.trailing_whitespace_width
@@ -460,13 +456,21 @@ impl TextBuffer {
                     })
                     .sum::<f32>();
 
-                line.width -= extra_width;
+                let prev_runs = self.runs[idx + 1..run_idx].iter();
+                let add_width = prev_runs
+                    .map(|run| run.width + run.trailing_whitespace_width)
+                    .sum::<f32>();
+
+                line.width -= subtract_width;
                 line.run_range.end = idx + 1;
 
                 self.lines.push(line.clone());
 
                 line.run_range.start = idx + 1;
-                line.width = extra_width + run.width;
+                line.width = add_width + run.width;
+
+                prev_trailing_whitespace = run.trailing_whitespace_width;
+                prev_break_opportunity = None;
             }
 
             match run.linebreak {
@@ -491,6 +495,8 @@ impl TextBuffer {
             }
         }
 
+        // handle last line
+
         line.run_range.end = self.runs.len();
         if !line.run_range.is_empty() {
             self.lines.push(line);
@@ -498,9 +504,21 @@ impl TextBuffer {
 
         self.lines.retain(|v| !v.run_range.is_empty());
 
+        // remove trailing whitespace glyphs
+
         for line in &mut self.lines {
             line.range = self.runs[line.run_range.start].range.start
                 ..self.runs[line.run_range.end - 1].range.end;
+
+            let max_cluster = line.range.start + self.text[line.range.clone()].trim_end().len();
+
+            for run in &mut self.runs[line.run_range.clone()] {
+                run.glyph_range.end = self.glyphs[run.glyph_range.clone()]
+                    .iter()
+                    .position(|v| v.cluster >= max_cluster)
+                    .map(|v| run.glyph_range.start + v)
+                    .unwrap_or(run.glyph_range.end);
+            }
         }
     }
 
@@ -515,18 +533,148 @@ impl TextBuffer {
                 .iter()
                 .flat_map(|run| self.glyphs[run.glyph_range.clone()].iter());
 
-            let text = &self.text[line.range.clone()];
-            let max_cluster = line.range.start + text.trim_end().len();
-
             for glyph in glyphs {
                 let char = self.text[glyph.cluster..].chars().next();
                 let is_whitespace = char.is_some_and(char::is_whitespace);
-
-                // ignore trailing line whitespace
-                if glyph.cluster < max_cluster && is_whitespace {
+                if is_whitespace {
                     line.whitespace_width += glyph.x_advance;
                 }
             }
+        }
+    }
+
+    fn bidi_reorder_runs(&mut self) {
+        if self.runs.iter().all(|v| v.bidi_level.is_ltr()) {
+            return;
+        }
+
+        let num_runs = self.runs.len();
+
+        for line in &self.lines {
+            let runs = &self.runs[line.run_range.clone()];
+
+            self.scratch_indices.clear();
+
+            Self::bidi_reorder_visual(
+                runs.len(),
+                |i| runs.get(i).map(|v| v.bidi_level),
+                &mut self.scratch_indices,
+            );
+
+            for &run_idx in &self.scratch_indices {
+                let run = self.runs[line.run_range.start + run_idx].clone();
+                self.runs.push(run);
+            }
+
+            // swap old (pre-reordered) and new (reordered) runs
+
+            let (l, r) = self.runs.split_at_mut(line.run_range.end);
+            let l_start = line.run_range.start;
+            let r_start = r.len() - line.run_range.len();
+            l[l_start..].swap_with_slice(&mut r[r_start..]);
+
+            // remove old runs
+
+            self.runs.truncate(num_runs);
+
+            // reverse rtl runs
+
+            for run in &mut self.runs[line.run_range.clone()] {
+                if run.bidi_level.is_rtl() {
+                    let glyphs = &mut self.glyphs[run.glyph_range.clone()];
+                    glyphs.reverse();
+                }
+            }
+        }
+    }
+
+    /// adopted from unicode-bidi
+    fn bidi_reorder_visual(
+        num_levels: usize,
+        get_level: impl Fn(usize) -> Option<BidiLevel>,
+        result: &mut Vec<usize>,
+    ) {
+        // Gets the next range of characters after start_index with a level greater
+        // than or equal to `max`
+        fn next_range(
+            num_levels: usize,
+            get_level: impl Fn(usize) -> Option<BidiLevel>,
+            mut start_index: usize,
+            max: BidiLevel,
+        ) -> Range<usize> {
+            if num_levels == 0 || start_index >= num_levels {
+                return start_index..start_index;
+            }
+            while let Some(l) = get_level(start_index) {
+                if l >= max {
+                    break;
+                }
+                start_index += 1;
+            }
+
+            if get_level(start_index).is_none() {
+                // If at the end of the array, adding one will
+                // produce an out-of-range end element
+                return start_index..start_index;
+            }
+
+            let mut end_index = start_index + 1;
+            while let Some(l) = get_level(end_index) {
+                if l < max {
+                    return start_index..end_index;
+                }
+                end_index += 1;
+            }
+
+            start_index..end_index
+        }
+
+        // This implementation is similar to the L2 implementation in `visual_runs()`
+        // but it cannot benefit from a precalculated LevelRun vector so needs to be different.
+
+        if num_levels == 0 {
+            result.clear();
+        }
+
+        let first_level = get_level(0).unwrap();
+
+        // Get the min and max levels
+        let (mut min, mut max) =
+            (0..num_levels).fold((first_level, first_level), |(min, max), i| {
+                let l = get_level(i).unwrap();
+                (std::cmp::min(min, l), std::cmp::max(max, l))
+            });
+
+        // Initialize an index map
+        result.extend(0..num_levels);
+
+        if min == max && min.is_ltr() {
+            // Everything is LTR and at the same level, do nothing
+            return;
+        }
+
+        // Stop at the lowest *odd* level, since everything below that
+        // is LTR and does not need further reordering
+        min = min.new_lowest_ge_rtl().expect("Level error");
+
+        // For each max level, take all contiguous chunks of
+        // levels ≥ max and reverse them
+        //
+        // We can do this check with the original levels instead of checking reorderings because all
+        // prior reorderings will have been for contiguous chunks of levels >> max, which will
+        // be a subset of these chunks anyway.
+        while min <= max {
+            let mut range = 0..0;
+            loop {
+                range = next_range(num_levels, &get_level, range.end, max);
+                result[range.clone()].reverse();
+
+                if range.end >= num_levels {
+                    break;
+                }
+            }
+
+            max.lower(1).expect("Level error");
         }
     }
 
@@ -548,11 +696,14 @@ impl TextBuffer {
                 .attrs
                 .align;
 
-            pos.x = match align {
-                TextAlign::Start | TextAlign::Left => 0.0,
-                TextAlign::End | TextAlign::Right => max_width - line.width,
-                TextAlign::Center => (max_width - line.width) * 0.5,
-                TextAlign::Justify => 0.0,
+            pos.x = match (align, line.is_rtl) {
+                (TextAlign::Left, _)
+                | (TextAlign::Start | TextAlign::Justify, false)
+                | (TextAlign::End, true) => 0.0,
+                (TextAlign::Right, _)
+                | (TextAlign::Start | TextAlign::Justify, true)
+                | (TextAlign::End, false) => max_width - line.width,
+                (TextAlign::Center, _) => (max_width - line.width) * 0.5,
             };
 
             let whitespace_stretch = if align == TextAlign::Justify && !line.is_linebreak_forced {
@@ -565,15 +716,7 @@ impl TextBuffer {
                 run.pos.x = pos.x;
                 run.pos.y = pos.y + (line.height - run.line_height) * 0.5 + run.line_height;
 
-                let text = &self.text[run.range.clone()];
-                let max_cluster = run.range.start + text.trim_end().len();
-                let mut glyph_range_end = run.glyph_range.end;
-
-                for (i, glyph) in self.glyphs[run.glyph_range.clone()].iter().enumerate() {
-                    if glyph.cluster >= max_cluster {
-                        glyph_range_end = run.glyph_range.start + i;
-                    }
-
+                for glyph in &mut self.glyphs[run.glyph_range.clone()] {
                     let char = self.text[glyph.cluster..].chars().next();
                     let is_whitespace = char.is_some_and(char::is_whitespace);
 
@@ -583,9 +726,6 @@ impl TextBuffer {
                         glyph.x_advance
                     };
                 }
-
-                // skip rendering whitespace characters at the end of words
-                run.glyph_range.end = glyph_range_end;
             }
 
             pos.y += line.height;

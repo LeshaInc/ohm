@@ -10,5 +10,12 @@ pub struct ShapedGlyph {
 }
 
 pub trait TextShaper: Send + Sync + 'static {
-    fn shape(&mut self, font_face: &FontFace, text: &str, size: f32, buf: &mut Vec<ShapedGlyph>);
+    fn shape(
+        &mut self,
+        font_face: &FontFace,
+        text: &str,
+        size: f32,
+        is_rtl: bool,
+        buf: &mut Vec<ShapedGlyph>,
+    );
 }

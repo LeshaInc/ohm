@@ -29,9 +29,10 @@ pub mod text {
             font_face: &FontFace,
             text: &str,
             size: f32,
+            is_rtl: bool,
             buf: &mut Vec<ShapedGlyph>,
         ) {
-            self.inner.shape(font_face, text, size, buf);
+            self.inner.shape(font_face, text, size, is_rtl, buf);
         }
     }
 }
