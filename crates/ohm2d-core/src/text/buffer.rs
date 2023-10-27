@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use smallvec::SmallVec;
-use unicode_bidi::{BidiInfo, Level as BidiLevel};
+use unicode_bidi::{BidiInfo, Level as BidiLevel, ParagraphInfo as BidiParagraph};
 use unicode_linebreak::BreakOpportunity;
 
 use crate::math::Vec2;
@@ -17,6 +17,7 @@ pub struct TextBuffer {
     runs: Vec<Run>,
     glyphs: Vec<ShapedGlyph>,
     lines: Vec<Line>,
+    bidi_paragraphs: Vec<BidiParagraph>,
     scratch_indices: Vec<usize>,
     max_width: f32,
     height: f32,
@@ -65,6 +66,7 @@ impl TextBuffer {
             runs: Vec::new(),
             glyphs: Vec::new(),
             lines: Vec::new(),
+            bidi_paragraphs: Vec::new(),
             scratch_indices: Vec::new(),
             max_width: f32::INFINITY,
             height: 0.0,
@@ -78,6 +80,7 @@ impl TextBuffer {
         self.runs.clear();
         self.glyphs.clear();
         self.lines.clear();
+        self.bidi_paragraphs.clear();
         self.scratch_indices.clear();
         self.max_width = f32::INFINITY;
         self.height = 0.0;
@@ -116,6 +119,7 @@ impl TextBuffer {
         self.runs.clear();
         self.glyphs.clear();
         self.lines.clear();
+        self.bidi_paragraphs.clear();
         self.scratch_indices.clear();
 
         self.split_runs_by_bidi_levels();
@@ -132,6 +136,7 @@ impl TextBuffer {
 
     fn split_runs_by_bidi_levels(&mut self) {
         let bidi_info = BidiInfo::new(&self.text, None);
+        self.bidi_paragraphs = bidi_info.paragraphs;
 
         for (section_idx, section) in self.sections.iter().enumerate() {
             Self::split_bidi_helper(
@@ -523,7 +528,18 @@ impl TextBuffer {
     }
 
     fn measure_lines(&mut self) {
+        let mut bidi_paragraph_idx = 0;
+
         for line in &mut self.lines {
+            while let Some(paragraph) = self.bidi_paragraphs.get(bidi_paragraph_idx) {
+                if paragraph.range.contains(&line.range.start) {
+                    line.is_rtl = paragraph.level.is_rtl();
+                    break;
+                } else {
+                    bidi_paragraph_idx += 1;
+                }
+            }
+
             line.height = self.runs[line.run_range.clone()]
                 .iter()
                 .map(|v| v.line_height)
@@ -696,25 +712,38 @@ impl TextBuffer {
                 .attrs
                 .align;
 
-            pos.x = match (align, line.is_rtl) {
-                (TextAlign::Left, _)
-                | (TextAlign::Start | TextAlign::Justify, false)
-                | (TextAlign::End, true) => 0.0,
-                (TextAlign::Right, _)
-                | (TextAlign::Start | TextAlign::Justify, true)
-                | (TextAlign::End, false) => max_width - line.width,
-                (TextAlign::Center, _) => (max_width - line.width) * 0.5,
-            };
-
             let whitespace_stretch = if align == TextAlign::Justify && !line.is_linebreak_forced {
                 1.0 + (max_width - line.width) / line.whitespace_width
             } else {
                 1.0
             };
 
-            for run in &mut self.runs[line.run_range.clone()] {
-                run.pos.x = pos.x;
+            let (start, is_left_aligned) = match (align, line.is_rtl) {
+                (TextAlign::Left, _)
+                | (TextAlign::Start | TextAlign::Justify, false)
+                | (TextAlign::End, true) => (0.0, true),
+                (TextAlign::Right, _)
+                | (TextAlign::Start | TextAlign::Justify, true)
+                | (TextAlign::End, false) => (max_width, false),
+                (TextAlign::Center, _) => ((max_width - line.width) * 0.5, true),
+            };
+
+            pos.x = start;
+
+            let mut run_idx = if is_left_aligned {
+                line.run_range.start
+            } else {
+                line.run_range.end - 1
+            };
+
+            while line.run_range.contains(&run_idx) {
+                let run = &mut self.runs[run_idx];
                 run.pos.y = pos.y + (line.height - run.line_height) * 0.5 + run.line_height;
+
+                if is_left_aligned {
+                    run.pos.x = pos.x;
+                    run_idx += 1;
+                }
 
                 for glyph in &mut self.glyphs[run.glyph_range.clone()] {
                     let char = self.text[glyph.cluster..].chars().next();
@@ -724,7 +753,16 @@ impl TextBuffer {
                         glyph.x_advance *= whitespace_stretch;
                     }
 
-                    pos.x += glyph.x_advance;
+                    if is_left_aligned {
+                        pos.x += glyph.x_advance;
+                    } else {
+                        pos.x -= glyph.x_advance;
+                    }
+                }
+
+                if !is_left_aligned {
+                    run.pos.x = pos.x;
+                    run_idx = run_idx.wrapping_sub(1);
                 }
             }
 
