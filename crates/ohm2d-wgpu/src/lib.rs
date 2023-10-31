@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Context, Result};
-use ohm2d_core::math::{URect, UVec2, Vec2};
+use ohm2d_core::math::{URect, UVec2, Vec2, Vec4};
 use ohm2d_core::{
     Batcher, DrawList, ImageData, ImageFormat, RectInstance, Renderer, SurfaceId, TextureCache,
     TextureCommand, TextureId, Vertex,
@@ -666,6 +666,31 @@ impl RendererContext {
     }
 }
 
+#[repr(packed)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+struct OurVertex {
+    pos: Vec2,
+    tex: Vec2,
+    color: Vec4,
+    rect_id: u32,
+}
+
+#[repr(C)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, Default, encase::ShaderType)]
+struct OurRectInstance {
+    corner_radii: Vec4,
+    border_color: Vec4,
+    shadow_color: Vec4,
+    shadow_offset: Vec2,
+    pos: Vec2,
+    size: Vec2,
+    border_width: f32,
+    shadow_blur_radius: f32,
+    shadow_spread_radius: f32,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, encase::ShaderType)]
 struct Globals {
@@ -675,7 +700,7 @@ struct Globals {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, encase::ShaderType)]
 struct RectInstances {
-    arr: [RectInstance; MAX_INSTANCES_PER_BUFFER],
+    arr: [OurRectInstance; MAX_INSTANCES_PER_BUFFER],
 }
 
 async fn create_adapter(instance: &Instance, main_surface: &Surface) -> Result<Adapter> {
@@ -776,11 +801,21 @@ fn create_blit_bind_group_layout(device: &Device) -> BindGroupLayout {
     })
 }
 
-fn create_vertex_buffer(device: &Device, data: &[Vertex]) -> Buffer {
+fn create_vertex_buffer(device: &Device, vertices: &[Vertex]) -> Buffer {
+    let vertices = vertices
+        .iter()
+        .map(|v| OurVertex {
+            pos: v.pos,
+            tex: v.tex,
+            color: v.color,
+            rect_id: v.rect_id,
+        })
+        .collect::<Vec<_>>();
+
     let contents = unsafe {
         std::slice::from_raw_parts(
-            data.as_ptr() as *const u8,
-            data.len() * std::mem::size_of::<Vertex>(),
+            vertices.as_ptr() as *const u8,
+            vertices.len() * std::mem::size_of::<OurVertex>(),
         )
     };
 
@@ -831,8 +866,21 @@ fn create_uber_bind_group(
 ) -> BindGroup {
     let globals_buffer = create_uniform_buffer(device, globals);
 
-    let mut rect_instances_arr = [RectInstance::default(); MAX_INSTANCES_PER_BUFFER];
-    rect_instances_arr[..rect_instances.len()].copy_from_slice(rect_instances);
+    let mut rect_instances_arr = [OurRectInstance::default(); MAX_INSTANCES_PER_BUFFER];
+
+    for (i, v) in rect_instances.iter().enumerate() {
+        rect_instances_arr[i] = OurRectInstance {
+            corner_radii: v.corner_radii,
+            border_color: v.border_color,
+            shadow_color: v.shadow_color,
+            shadow_offset: v.shadow_offset,
+            pos: v.pos,
+            size: v.size,
+            border_width: v.border_width,
+            shadow_blur_radius: v.shadow_blur_radius,
+            shadow_spread_radius: v.shadow_spread_radius,
+        };
+    }
 
     let rect_instances_buffer = create_uniform_buffer(
         device,

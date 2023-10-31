@@ -45,7 +45,7 @@ pub struct Vertex {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, encase::ShaderType)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RectInstance {
     pub corner_radii: Vec4,
     pub border_color: Vec4,
