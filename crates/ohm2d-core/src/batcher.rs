@@ -1,12 +1,13 @@
 use std::ops::Range;
 
-use crate::math::{vec2, Vec2, Vec4};
+use crate::math::{vec2, Rect, UVec2, Vec2, Vec4};
 use crate::text::{GlyphKey, SubpixelBin};
 use crate::{
     Color, Command, CornerRadii, DrawGlyph, DrawList, DrawRect, Fill, ImageFormat, SurfaceId,
     TextureCache, TextureId,
 };
 
+#[derive(Debug, Clone, Copy)]
 pub struct BatchList<'a> {
     pub batches: &'a [Batch],
     pub vertices: &'a [Vertex],
@@ -17,7 +18,8 @@ pub struct BatchList<'a> {
 #[derive(Debug, Clone)]
 pub struct Batch {
     pub surface: SurfaceId,
-    pub texture: Option<TextureId>,
+    pub framebuffer: FramebufferId,
+    pub source: Source,
     pub clear_color: Option<Color>,
     pub shader_kind: ShaderKind,
     pub index_range: Range<u32>,
@@ -58,12 +60,23 @@ pub struct RectInstance {
     pub shadow_spread_radius: f32,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
+pub struct FramebufferId(pub u64);
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum Source {
+    White,
+    Texture(TextureId),
+    Framebuffer(SurfaceId, FramebufferId),
+}
+
 #[derive(Debug)]
 pub struct Batcher {
     batches: Vec<Batch>,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     rect_instances: Vec<RectInstance>,
+    alpha_layers: Vec<AlphaLayer>,
     max_instances_per_buffer: usize,
 }
 
@@ -74,30 +87,41 @@ impl Batcher {
             vertices: Vec::new(),
             indices: Vec::new(),
             rect_instances: Vec::new(),
+            alpha_layers: Vec::new(),
             max_instances_per_buffer,
         }
     }
 
-    pub fn prepare(&mut self, texture_cache: &TextureCache, draw_lists: &[DrawList]) -> BatchList {
+    pub fn prepare(
+        &mut self,
+        texture_cache: &TextureCache,
+        surface_size_getter: &dyn Fn(SurfaceId) -> UVec2,
+        draw_lists: &[DrawList],
+    ) -> BatchList {
         self.batches.clear();
         self.vertices.clear();
         self.indices.clear();
         self.rect_instances.clear();
+        self.alpha_layers.clear();
 
         for draw_list in draw_lists {
             let mut context = BatcherContext {
                 texture_cache,
+                surface_size_getter,
                 max_instances_per_buffer: self.max_instances_per_buffer,
                 last_index: 0,
                 cur_clear_color: None,
                 cur_rect_instance_buffer: 0,
-                cur_texture: None,
+                cur_source: Source::White,
                 cur_surface: draw_list.surface,
+                cur_framebuffer: FramebufferId(0),
                 cur_shader_kind: ShaderKind::Uber,
+                cur_bounding_rect: None,
                 batches: &mut self.batches,
                 vertices: &mut self.vertices,
                 indices: &mut self.indices,
                 rect_instances: &mut self.rect_instances,
+                alpha_layers: &mut self.alpha_layers,
             };
 
             context.prepare(draw_list.commands);
@@ -114,17 +138,27 @@ impl Batcher {
 
 struct BatcherContext<'a> {
     texture_cache: &'a TextureCache,
+    surface_size_getter: &'a dyn Fn(SurfaceId) -> UVec2,
     max_instances_per_buffer: usize,
     last_index: u32,
     cur_clear_color: Option<Color>,
     cur_rect_instance_buffer: usize,
-    cur_texture: Option<TextureId>,
+    cur_source: Source,
     cur_surface: SurfaceId,
+    cur_framebuffer: FramebufferId,
     cur_shader_kind: ShaderKind,
+    cur_bounding_rect: Option<Rect>,
     batches: &'a mut Vec<Batch>,
     vertices: &'a mut Vec<Vertex>,
     indices: &'a mut Vec<u32>,
     rect_instances: &'a mut Vec<RectInstance>,
+    alpha_layers: &'a mut Vec<AlphaLayer>,
+}
+
+#[derive(Debug)]
+struct AlphaLayer {
+    alpha: f32,
+    prev_bounding_rect: Option<Rect>,
 }
 
 impl BatcherContext<'_> {
@@ -160,20 +194,20 @@ impl BatcherContext<'_> {
             Fill::Image(fill) => fill.tint,
         };
 
-        let (texture, mut tex_min, mut tex_max) = match rect.fill {
+        let (source, mut tex_min, mut tex_max) = match rect.fill {
             Fill::Image(fill) => self
                 .texture_cache
                 .get_image(fill.image)
                 .map(|image| {
                     let tex_min = image.rect.min.as_vec2() / image.texture_size.as_vec2();
                     let tex_max = image.rect.max.as_vec2() / image.texture_size.as_vec2();
-                    (Some(image.texture), tex_min, tex_max)
+                    (Source::Texture(image.texture), tex_min, tex_max)
                 })
-                .unwrap_or((None, Vec2::ZERO, Vec2::ZERO)),
-            _ => (None, Vec2::ZERO, Vec2::ZERO),
+                .unwrap_or((Source::White, Vec2::ZERO, Vec2::ZERO)),
+            _ => (Source::White, Vec2::ZERO, Vec2::ZERO),
         };
 
-        self.set_texture(texture);
+        self.set_source(source);
 
         if rect.border.is_none()
             && rect.shadow.is_none()
@@ -232,7 +266,7 @@ impl BatcherContext<'_> {
             return;
         };
 
-        self.set_texture(Some(glyph.texture));
+        self.set_source(Source::Texture(glyph.texture));
 
         let tex_min = glyph.rect.min.as_vec2() / glyph.texture_size.as_vec2();
         let tex_max = glyph.rect.max.as_vec2() / glyph.texture_size.as_vec2();
@@ -249,17 +283,45 @@ impl BatcherContext<'_> {
         self.rect(pos, size, color, tex_min, tex_max, rect_id);
     }
 
-    fn cmd_begin_alpha(&mut self, _alpha: f32) {
-        todo!()
+    fn cmd_begin_alpha(&mut self, alpha: f32) {
+        self.flush();
+
+        self.alpha_layers.push(AlphaLayer {
+            alpha,
+            prev_bounding_rect: self.cur_bounding_rect,
+        });
+
+        self.cur_clear_color = Some(Color::TRANSPAENT);
+        self.cur_bounding_rect = None;
+        self.cur_framebuffer.0 += 1;
     }
 
     fn cmd_end_alpha(&mut self) {
-        todo!()
+        let layer = self
+            .alpha_layers
+            .pop()
+            .expect("end_alpha without matching begin_alpha");
+
+        let boudning_rect = self.cur_bounding_rect;
+
+        self.flush();
+        self.cur_clear_color = None;
+        self.cur_bounding_rect = layer.prev_bounding_rect;
+        self.cur_source = Source::Framebuffer(self.cur_surface, self.cur_framebuffer);
+        self.cur_framebuffer.0 -= 1;
+
+        let Some(rect) = boudning_rect else { return };
+
+        let tex_min = rect.min / (self.surface_size_getter)(self.cur_surface).as_vec2();
+        let tex_max = rect.max / (self.surface_size_getter)(self.cur_surface).as_vec2();
+
+        let color = Color::rgba(layer.alpha, layer.alpha, layer.alpha, layer.alpha);
+        self.rect(rect.min, rect.size(), color, tex_min, tex_max, u32::MAX);
     }
 
     fn flush(&mut self) {
         let index_range = self.last_index..self.indices.len() as u32;
-        if index_range.is_empty() {
+        if index_range.is_empty() && self.cur_clear_color.is_none() {
             return;
         }
 
@@ -267,7 +329,8 @@ impl BatcherContext<'_> {
 
         self.batches.push(Batch {
             surface: self.cur_surface,
-            texture: self.cur_texture,
+            framebuffer: self.cur_framebuffer,
+            source: self.cur_source,
             clear_color: self.cur_clear_color,
             shader_kind: self.cur_shader_kind,
             index_range,
@@ -277,21 +340,13 @@ impl BatcherContext<'_> {
         self.cur_clear_color = None;
     }
 
-    fn set_texture(&mut self, texture: Option<TextureId>) {
-        if self.cur_texture != texture {
+    fn set_source(&mut self, source: Source) {
+        if self.cur_source != source {
             self.flush();
         }
 
-        self.cur_texture = texture;
+        self.cur_source = source;
     }
-
-    // fn set_shader_kind(&mut self, shader_kind: ShaderKind) {
-    //     if self.cur_shader_kind != shader_kind {
-    //         self.flush();
-    //     }
-
-    //     self.cur_shader_kind = shader_kind;
-    // }
 
     fn rect(
         &mut self,
@@ -302,7 +357,14 @@ impl BatcherContext<'_> {
         tex_max: Vec2,
         rect_id: u32,
     ) {
-        let color = color.into();
+        let color = Vec4::from(color);
+
+        if let Some(rect) = &mut self.cur_bounding_rect {
+            rect.min = rect.min.min(pos);
+            rect.max = rect.max.max(pos + size);
+        } else {
+            self.cur_bounding_rect = Some(Rect::new(pos, pos + size));
+        }
 
         let a = self.vertex(pos, tex_min, color, rect_id);
 

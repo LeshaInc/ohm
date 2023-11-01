@@ -4,6 +4,7 @@ use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, Te
 use ohm2d::{
     Border, Color, Command, CornerRadii, DrawGlyph, DrawList, DrawRect, Fill, Graphics, Renderer,
 };
+use ohm2d_core::Shadow;
 use winit::dpi::PhysicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::window::WindowBuilder;
@@ -102,6 +103,60 @@ fn main() -> Result<()> {
                     pos.x += glyph.x_advance;
                 }
             }
+
+            commands.push(Command::BeginAlpha(0.5));
+
+            let shadow = Some(Shadow {
+                blur_radius: 12.0,
+                spread_radius: 0.0,
+                offset: vec2(0.0, 4.0),
+                color: Color::rgba(0.0, 0.0, 0.0, 1.0),
+            });
+
+            commands.push(Command::DrawRect(DrawRect {
+                pos: vec2(80.0, 80.0),
+                size: vec2(100.0, 100.0),
+                fill: Fill::Solid(Color::rgb(1.0, 0.0, 0.0)),
+                corner_radii: CornerRadii::new_equal(8.0),
+                border: None,
+                shadow,
+            }));
+
+            commands.push(Command::DrawRect(DrawRect {
+                pos: vec2(120.0, 120.0),
+                size: vec2(100.0, 100.0),
+                fill: Fill::Solid(Color::rgb(0.0, 1.0, 0.0)),
+                corner_radii: CornerRadii::new_equal(8.0),
+                border: None,
+                shadow,
+            }));
+
+            commands.push(Command::EndAlpha);
+
+            let shadow = Some(Shadow {
+                blur_radius: 12.0,
+                spread_radius: 0.0,
+                offset: vec2(0.0, 4.0),
+                color: Color::rgba(0.0, 0.0, 0.0, 0.5),
+            });
+
+            commands.push(Command::DrawRect(DrawRect {
+                pos: vec2(280.0, 80.0),
+                size: vec2(100.0, 100.0),
+                fill: Fill::Solid(Color::rgba(0.5, 0.0, 0.0, 0.5)),
+                corner_radii: CornerRadii::new_equal(8.0),
+                border: None,
+                shadow,
+            }));
+
+            commands.push(Command::DrawRect(DrawRect {
+                pos: vec2(320.0, 120.0),
+                size: vec2(100.0, 100.0),
+                fill: Fill::Solid(Color::rgba(0.0, 0.5, 0.0, 0.5)),
+                corner_radii: CornerRadii::new_equal(8.0),
+                border: None,
+                shadow,
+            }));
 
             graphics
                 .render(&[DrawList {

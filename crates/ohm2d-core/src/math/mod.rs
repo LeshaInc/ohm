@@ -1,5 +1,5 @@
-mod urect;
+mod rect;
 
 pub use glam::*;
 
-pub use self::urect::*;
+pub use self::rect::*;
