@@ -84,7 +84,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = sdf_rounded_rect(pos, rect.size / 2.0, rect.corner_radii);
     let mask = saturate(0.5 - dist);
     let border_mask = saturate(0.5 - dist - rect.border_width);
-    var color = mix(rect.border_color, in.color * base_color, border_mask) * mask;
+    var color = mix(rect.border_color, in.color * base_color, border_mask);
 
     if shadow_radius > 0.0 {
         let size = rect.size / 2.0 + rect.shadow_spread_radius;
@@ -100,7 +100,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             shadow = sdf_shadow(pos - rect.shadow_offset, size, radii, sigma);
         }
 
-        color += rect.shadow_color * shadow * (1.0 - step(0.99, mask));
+        color = mix(shadow * rect.shadow_color, color, mask);
+    } else {
+        color *= mask;
     }
 
     return color;
