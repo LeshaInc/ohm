@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Context, Result};
 use ohm2d_core::math::{URect, UVec2, Vec2, Vec4};
@@ -594,11 +594,23 @@ impl RendererContext {
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let mut batches = batcher.batches().iter().peekable();
 
+        let mut touched_surfaces = HashSet::new();
+        let mut touched_framebuffers = HashSet::new();
+
         encoder.push_debug_group("ohm2d");
 
         while let Some(batch) = batches.peek() {
             let surface_id = batch.surface;
             let framebuffer_id = batch.framebuffer;
+
+            touched_surfaces.insert(surface_id);
+
+            let load_op = if touched_framebuffers.contains(&(surface_id, framebuffer_id)) {
+                LoadOp::Load
+            } else {
+                touched_framebuffers.insert((surface_id, framebuffer_id));
+                LoadOp::Clear(Color::TRANSPARENT)
+            };
 
             let surface = &self.surfaces[surface_id];
             let framebuffers = &surface.framebuffers;
@@ -612,7 +624,7 @@ impl RendererContext {
                     view: &framebuffer.texture_view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Load,
+                        load: load_op,
                         store: true,
                     },
                 })],
@@ -640,13 +652,6 @@ impl RendererContext {
             drop(pass);
             encoder.pop_debug_group(); // pass
         }
-
-        let mut touched_surfaces = draw_lists
-            .iter()
-            .map(|list| list.surface)
-            .collect::<Vec<_>>();
-        touched_surfaces.sort();
-        touched_surfaces.dedup();
 
         self.to_present.clear();
 
