@@ -131,14 +131,16 @@ impl TextureCache {
 
     pub fn add_glyphs_from_lists(&mut self, draw_lists: &[DrawList]) {
         for draw_list in draw_lists {
-            for command in draw_list.commands {
-                if let Command::DrawGlyph(glyph) = command {
-                    self.add_glyph(GlyphKey {
-                        font: glyph.font,
-                        glyph: glyph.glyph,
-                        size: glyph.size.to_bits(),
-                        subpixel_bin: SubpixelBin::new(glyph.pos),
-                    });
+            for layer in draw_list.layers {
+                for command in layer.commands {
+                    if let Command::DrawGlyph(glyph) = command {
+                        self.add_glyph(GlyphKey {
+                            font: glyph.font,
+                            glyph: glyph.glyph,
+                            size: glyph.size.to_bits(),
+                            subpixel_bin: SubpixelBin::new(glyph.pos),
+                        });
+                    }
                 }
             }
         }

@@ -1,7 +1,7 @@
 pub mod math;
+pub mod renderer;
 
 mod asset;
-mod batcher;
 mod color;
 mod corner_radii;
 mod image;
@@ -9,41 +9,58 @@ pub mod text;
 mod texture;
 
 pub use self::asset::*;
-pub use self::batcher::*;
 pub use self::color::*;
 pub use self::corner_radii::*;
 pub use self::image::*;
+pub use self::renderer::Renderer;
+use self::renderer::SurfaceId;
 pub use self::texture::*;
-use crate::math::{URect, UVec2, Vec2};
+use crate::math::{URect, Vec2};
 use crate::text::FontId;
-
-slotmap::new_key_type! {
-    pub struct SurfaceId;
-}
-
-pub trait Renderer {
-    fn get_surface_size(&self, surface: SurfaceId) -> UVec2;
-
-    fn update_textures(&mut self, commands: &[TextureCommand]);
-
-    fn render(&mut self, texture_cache: &TextureCache, draw_lists: &[DrawList<'_>]);
-
-    fn present(&mut self);
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct DrawList<'a> {
     pub surface: SurfaceId,
+    pub layers: &'a [Layer<'a>],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Layer<'a> {
     pub commands: &'a [Command],
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct LayerId(pub usize);
+
+#[derive(Debug, Clone, Copy)]
+pub struct Scissor {
+    pub pos: Vec2,
+    pub size: Vec2,
+    pub corner_radii: CornerRadii,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Backdrop {
+    Transparent,
+    Fill(Color),
+    Copy,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Effect {
+    Blur(BlurEffect),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BlurEffect {
+    pub radius: Vec2,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum Command {
-    Clear(Color),
     DrawRect(DrawRect),
     DrawGlyph(DrawGlyph),
-    BeginAlpha(f32),
-    EndAlpha,
+    DrawLayer(DrawLayer),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -63,6 +80,13 @@ pub struct DrawGlyph {
     pub font: FontId,
     pub glyph: u16,
     pub color: Color,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DrawLayer {
+    pub id: LayerId,
+    pub tint: Color,
+    pub scissor: Option<Scissor>,
 }
 
 #[derive(Debug, Clone, Copy)]

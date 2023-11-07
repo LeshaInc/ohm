@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use anyhow::{bail, Context, Result};
 use ohm2d_core::math::{URect, UVec2, Vec2, Vec4};
-use ohm2d_core::{
-    Batcher, DrawList, ImageData, ImageFormat, RectInstance, Renderer, Source, SurfaceId,
-    TextureCache, TextureCommand, TextureId, Vertex,
+use ohm2d_core::renderer::{
+    Batcher, BatcherScratch, Instance as BatcherInstance, Renderer, Source, SurfaceId, Vertex,
 };
+use ohm2d_core::{DrawList, ImageData, ImageFormat, TextureCache, TextureCommand, TextureId};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use slotmap::SlotMap;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -90,7 +90,7 @@ impl Renderer for WgpuRenderer {
 
 #[derive(Debug)]
 struct RendererContext {
-    batcher: Batcher,
+    batcher_scratch: BatcherScratch,
     adapter: Adapter,
     device: Device,
     queue: Queue,
@@ -150,7 +150,7 @@ impl RendererContext {
         let sampler = create_sampler(&device);
 
         Ok(RendererContext {
-            batcher: Batcher::new(MAX_INSTANCES_PER_BUFFER),
+            batcher_scratch: BatcherScratch::default(),
             adapter,
             device,
             queue,
@@ -297,6 +297,7 @@ impl RendererContext {
 
     fn texture_cmd_copy(
         &mut self,
+        encoder: &mut CommandEncoder,
         src_id: TextureId,
         dst_id: TextureId,
         src_rect: URect,
@@ -305,8 +306,6 @@ impl RendererContext {
         let size = src_rect.size();
         let src_texture = &self.textures[&src_id].texture;
         let dst_texture = &self.textures[&dst_id].texture;
-
-        let mut encoder = self.device.create_command_encoder(&Default::default());
 
         encoder.copy_texture_to_texture(
             ImageCopyTexture {
@@ -335,8 +334,6 @@ impl RendererContext {
                 depth_or_array_layers: 1,
             },
         );
-
-        self.queue.submit(std::iter::once(encoder.finish()));
 
         self.texture_mark_mipmaps_dirty(dst_id);
     }
@@ -458,6 +455,13 @@ impl RendererContext {
     }
 
     fn update_textures(&mut self, commands: &[TextureCommand]) {
+        if commands.is_empty() {
+            return;
+        }
+
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.push_debug_group("ohm2d-textures");
+
         for command in commands {
             match command {
                 TextureCommand::CreateStatic { id, data } => {
@@ -474,7 +478,7 @@ impl RendererContext {
                     src_rect,
                     dst_rect,
                 } => {
-                    self.texture_cmd_copy(src_id, dst_id, src_rect, dst_rect);
+                    self.texture_cmd_copy(&mut encoder, src_id, dst_id, src_rect, dst_rect);
                 }
 
                 TextureCommand::Write {
@@ -507,35 +511,38 @@ impl RendererContext {
             entry.mipmaps_dirty = false;
         }
 
-        let mut encoder = None;
-
-        for id in to_update {
-            let encoder = encoder
-                .get_or_insert_with(|| self.device.create_command_encoder(&Default::default()));
-            self.texture_generate_mipmaps(encoder, id);
+        if !to_update.is_empty() {
+            encoder.push_debug_group("mipmaps");
+            for id in to_update {
+                self.texture_generate_mipmaps(&mut encoder, id);
+            }
+            encoder.pop_debug_group();
         }
 
-        if let Some(encoder) = encoder {
-            self.queue.submit(std::iter::once(encoder.finish()));
-        }
+        encoder.pop_debug_group();
+
+        self.queue.submit(std::iter::once(encoder.finish()));
     }
 
     fn render(&mut self, texture_cache: &TextureCache, draw_lists: &[DrawList<'_>]) {
-        let surface_size_getter = |id| {
-            let config = &self.surfaces[id].config;
-            UVec2::new(config.width, config.height)
-        };
+        let mut batcher = Batcher::new(
+            &mut self.batcher_scratch,
+            texture_cache,
+            MAX_INSTANCES_PER_BUFFER,
+        );
 
-        let data = self
-            .batcher
-            .prepare(texture_cache, &surface_size_getter, draw_lists);
+        for list in draw_lists {
+            let surface_config = &self.surfaces[list.surface].config;
+            let surface_size = UVec2::new(surface_config.width, surface_config.height);
+            batcher.prepare(surface_size, list);
+        }
 
-        let vertex_buffer = create_vertex_buffer(&self.device, data.vertices);
-        let index_buffer = create_index_buffer(&self.device, data.indices);
+        let vertex_buffer = create_vertex_buffer(&self.device, batcher.vertices());
+        let index_buffer = create_index_buffer(&self.device, batcher.indices());
 
         let mut bind_groups = HashMap::new();
 
-        for batch in data.batches {
+        for batch in batcher.batches() {
             let surface = &mut self.surfaces[batch.surface];
             let framebuffers = &mut surface.framebuffers;
 
@@ -548,7 +555,7 @@ impl RendererContext {
             }
 
             bind_groups
-                .entry((batch.rect_instances_buffer, batch.source))
+                .entry((batch.instance_buffer_id, batch.source))
                 .or_insert_with(|| {
                     let config = &self.surfaces[batch.surface].config;
                     let resolution = UVec2::new(config.width, config.height).as_vec2();
@@ -573,9 +580,10 @@ impl RendererContext {
                         &self.device,
                         &self.uber_bind_group_layout,
                         &globals,
-                        data.rect_instances
+                        batcher
+                            .instances()
                             .chunks(MAX_INSTANCES_PER_BUFFER)
-                            .nth(batch.rect_instances_buffer)
+                            .nth(batch.instance_buffer_id)
                             .unwrap_or(&[]),
                         texture_view,
                         &self.sampler,
@@ -584,7 +592,9 @@ impl RendererContext {
         }
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        let mut batches = data.batches.iter().peekable();
+        let mut batches = batcher.batches().iter().peekable();
+
+        encoder.push_debug_group("ohm2d");
 
         while let Some(batch) = batches.peek() {
             let surface_id = batch.surface;
@@ -594,23 +604,15 @@ impl RendererContext {
             let framebuffers = &surface.framebuffers;
             let framebuffer = &framebuffers[framebuffer_id.0 as usize];
 
+            encoder.push_debug_group("pass");
+
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &framebuffer.texture_view,
                     resolve_target: None,
                     ops: Operations {
-                        load: batch
-                            .clear_color
-                            .map(|c| {
-                                LoadOp::Clear(wgpu::Color {
-                                    r: c.r as f64,
-                                    g: c.g as f64,
-                                    b: c.b as f64,
-                                    a: c.a as f64,
-                                })
-                            })
-                            .unwrap_or(LoadOp::Load),
+                        load: LoadOp::Load,
                         store: true,
                     },
                 })],
@@ -629,18 +631,26 @@ impl RendererContext {
                 }
 
                 let bind_group = bind_groups
-                    .get(&(batch.rect_instances_buffer, batch.source))
+                    .get(&(batch.instance_buffer_id, batch.source))
                     .unwrap();
                 pass.set_bind_group(0, bind_group, &[]);
                 pass.draw_indexed(batch.index_range.clone(), 0, 0..1);
             }
+
+            drop(pass);
+            encoder.pop_debug_group(); // pass
         }
 
-        let mut touched_surfaces = data.batches.iter().map(|v| v.surface).collect::<Vec<_>>();
+        let mut touched_surfaces = draw_lists
+            .iter()
+            .map(|list| list.surface)
+            .collect::<Vec<_>>();
         touched_surfaces.sort();
         touched_surfaces.dedup();
 
         self.to_present.clear();
+
+        encoder.push_debug_group("present");
 
         for surface in touched_surfaces {
             let surface_entry = &self.surfaces[surface];
@@ -697,6 +707,9 @@ impl RendererContext {
             drop(rpass);
         }
 
+        encoder.pop_debug_group(); // present
+        encoder.pop_debug_group(); // ohm2d
+
         self.queue.submit(std::iter::once(encoder.finish()));
     }
 
@@ -714,13 +727,13 @@ struct OurVertex {
     pos: Vec2,
     tex: Vec2,
     color: Vec4,
-    rect_id: u32,
+    instance_id: u32,
 }
 
 #[repr(C)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Default, encase::ShaderType)]
-struct OurRectInstance {
+struct OurInstance {
     corner_radii: Vec4,
     border_color: Vec4,
     shadow_color: Vec4,
@@ -741,7 +754,7 @@ struct Globals {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, encase::ShaderType)]
 struct RectInstances {
-    arr: [OurRectInstance; MAX_INSTANCES_PER_BUFFER],
+    arr: [OurInstance; MAX_INSTANCES_PER_BUFFER],
 }
 
 async fn create_adapter(instance: &Instance, main_surface: &Surface) -> Result<Adapter> {
@@ -849,7 +862,7 @@ fn create_vertex_buffer(device: &Device, vertices: &[Vertex]) -> Buffer {
             pos: v.pos,
             tex: v.tex,
             color: v.color,
-            rect_id: v.rect_id,
+            instance_id: v.instance_id,
         })
         .collect::<Vec<_>>();
 
@@ -901,16 +914,16 @@ fn create_uber_bind_group(
     device: &Device,
     layout: &BindGroupLayout,
     globals: &Globals,
-    rect_instances: &[RectInstance],
+    instances: &[BatcherInstance],
     texture_view: &TextureView,
     sampler: &Sampler,
 ) -> BindGroup {
     let globals_buffer = create_uniform_buffer(device, globals);
 
-    let mut rect_instances_arr = [OurRectInstance::default(); MAX_INSTANCES_PER_BUFFER];
+    let mut rect_instances_arr = [OurInstance::default(); MAX_INSTANCES_PER_BUFFER];
 
-    for (i, v) in rect_instances.iter().enumerate() {
-        rect_instances_arr[i] = OurRectInstance {
+    for (i, v) in instances.iter().enumerate() {
+        rect_instances_arr[i] = OurInstance {
             corner_radii: v.corner_radii,
             border_color: v.border_color,
             shadow_color: v.shadow_color,

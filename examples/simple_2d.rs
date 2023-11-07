@@ -2,9 +2,9 @@ use anyhow::Result;
 use ohm2d::math::{vec2, UVec2};
 use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm2d::{
-    Border, Color, Command, CornerRadii, DrawGlyph, DrawList, DrawRect, Fill, Graphics, Renderer,
+    Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, Graphics,
+    Layer, LayerId, Renderer, Shadow,
 };
-use ohm2d_core::Shadow;
 use winit::dpi::PhysicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::window::WindowBuilder;
@@ -70,14 +70,22 @@ fn main() -> Result<()> {
             event: WindowEvent::RedrawRequested,
             ..
         } => {
-            let size = graphics.renderer.get_surface_size(surface);
+            let size = graphics.renderer.get_surface_size(surface).as_vec2();
 
             let mut commands = Vec::new();
-            commands.push(Command::Clear(Color::WHITE));
+
+            commands.push(Command::DrawRect(DrawRect {
+                pos: vec2(0.0, 0.0),
+                size,
+                fill: Fill::Solid(Color::WHITE),
+                corner_radii: CornerRadii::default(),
+                border: None,
+                shadow: None,
+            }));
 
             commands.push(Command::DrawRect(DrawRect {
                 pos: vec2(50.0, 50.0),
-                size: size.as_vec2() - vec2(100.0, 100.0),
+                size: size - vec2(100.0, 100.0),
                 fill: Fill::Solid(Color::TRANSPAENT),
                 corner_radii: CornerRadii::default(),
                 border: Some(Border {
@@ -104,7 +112,7 @@ fn main() -> Result<()> {
                 }
             }
 
-            commands.push(Command::BeginAlpha(0.5));
+            let mut layer_commands = Vec::new();
 
             let shadow = Some(Shadow {
                 blur_radius: 12.0,
@@ -113,7 +121,7 @@ fn main() -> Result<()> {
                 color: Color::rgba(0.0, 0.0, 0.0, 1.0),
             });
 
-            commands.push(Command::DrawRect(DrawRect {
+            layer_commands.push(Command::DrawRect(DrawRect {
                 pos: vec2(80.0, 80.0),
                 size: vec2(100.0, 100.0),
                 fill: Fill::Solid(Color::rgb(1.0, 0.0, 0.0)),
@@ -122,7 +130,7 @@ fn main() -> Result<()> {
                 shadow,
             }));
 
-            commands.push(Command::DrawRect(DrawRect {
+            layer_commands.push(Command::DrawRect(DrawRect {
                 pos: vec2(120.0, 120.0),
                 size: vec2(100.0, 100.0),
                 fill: Fill::Solid(Color::rgb(0.0, 1.0, 0.0)),
@@ -131,7 +139,11 @@ fn main() -> Result<()> {
                 shadow,
             }));
 
-            commands.push(Command::EndAlpha);
+            commands.push(Command::DrawLayer(DrawLayer {
+                id: LayerId(1),
+                tint: Color::rgba(0.5, 0.5, 0.5, 0.5),
+                scissor: None,
+            }));
 
             let shadow = Some(Shadow {
                 blur_radius: 12.0,
@@ -161,7 +173,14 @@ fn main() -> Result<()> {
             graphics
                 .render(&[DrawList {
                     surface,
-                    commands: &commands,
+                    layers: &[
+                        Layer {
+                            commands: &commands,
+                        },
+                        Layer {
+                            commands: &layer_commands,
+                        },
+                    ],
                 }])
                 .unwrap();
 

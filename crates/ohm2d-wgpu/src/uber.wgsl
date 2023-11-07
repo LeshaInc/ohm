@@ -34,7 +34,7 @@ struct VertexInput {
     @location(0) pos: vec2<f32>,    
     @location(1) tex: vec2<f32>,    
     @location(2) color: vec4<f32>,
-    @location(3) rect_id: u32,
+    @location(3) instance_id: u32,
 }
 
 struct VertexOutput {
@@ -42,7 +42,7 @@ struct VertexOutput {
     @location(0) pos: vec2<f32>,
     @location(1) tex: vec2<f32>,
     @location(2) color: vec4<f32>,
-    @location(3) rect_id: u32,
+    @location(3) instance_id: u32,
 }
 
 @vertex
@@ -59,7 +59,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.pos = in.pos;
     out.tex = in.tex;
     out.color = in.color;
-    out.rect_id = in.rect_id;
+    out.instance_id = in.instance_id;
 
     return out;
 }
@@ -68,15 +68,15 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let base_color = textureSample(texture, texture_sampler, in.tex);
 
-    if in.rect_id == 4294967295u {
+    if in.instance_id == 4294967295u {
         return in.color * base_color;
     }
 
-    if in.rect_id == 4294967294u {
+    if in.instance_id == 4294967294u {
         return in.color * base_color.r;
     }
 
-    let rect = rect_instances.arr[in.rect_id];
+    let rect = rect_instances.arr[in.instance_id];
 
     let shadow_radius = rect.shadow_blur_radius + rect.shadow_spread_radius;
     let pos = (in.pos - rect.pos) - rect.size / 2.0;

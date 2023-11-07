@@ -1,7 +1,7 @@
 use crate::math::Vec4;
 
 /// Color in linear sRGB color space with premultiplied alpha
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
