@@ -130,10 +130,17 @@ impl TextureCache {
     }
 
     pub fn add_glyphs_from_lists(&mut self, draw_lists: &[DrawList]) {
+        let mut lists = Vec::with_capacity(draw_lists.len());
+
         for draw_list in draw_lists {
-            for layer in draw_list.layers {
-                for command in layer.commands {
-                    if let Command::DrawGlyph(glyph) = command {
+            lists.push(draw_list.commands);
+        }
+
+        while let Some(list) = lists.pop() {
+            for command in list {
+                match command {
+                    Command::DrawLayer(v) => lists.push(v.commands),
+                    Command::DrawGlyph(glyph) => {
                         self.add_glyph(GlyphKey {
                             font: glyph.font,
                             glyph: glyph.glyph,
@@ -141,6 +148,7 @@ impl TextureCache {
                             subpixel_bin: SubpixelBin::new(glyph.pos),
                         });
                     }
+                    _ => (),
                 }
             }
         }

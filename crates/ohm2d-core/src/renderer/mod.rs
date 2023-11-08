@@ -4,7 +4,7 @@ use crate::math::{Rect, UVec2, Vec2, Vec4};
 use crate::text::{GlyphKey, SubpixelBin};
 use crate::{
     Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, ImageFormat,
-    Layer, LayerId, TextureCache, TextureCommand, TextureId,
+    TextureCache, TextureCommand, TextureId,
 };
 
 slotmap::new_key_type! {
@@ -52,7 +52,6 @@ pub struct FramebufferId(pub u64);
 
 #[derive(Debug, Default)]
 pub struct BatcherScratch {
-    layers: Vec<LayerInfo>,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     instances: Vec<Instance>,
@@ -61,7 +60,6 @@ pub struct BatcherScratch {
 
 impl BatcherScratch {
     pub fn clear(&mut self) {
-        self.layers.clear();
         self.vertices.clear();
         self.indices.clear();
         self.instances.clear();
@@ -72,7 +70,6 @@ impl BatcherScratch {
 #[derive(Debug)]
 pub struct Batcher<'a> {
     texture_cache: &'a TextureCache,
-    layers: &'a mut Vec<LayerInfo>,
     vertices: &'a mut Vec<Vertex>,
     indices: &'a mut Vec<u32>,
     instances: &'a mut Vec<Instance>,
@@ -84,15 +81,6 @@ pub struct Batcher<'a> {
     max_instances_per_buffer: usize,
     cur_instance_buffer_id: usize,
     last_index: u32,
-}
-
-#[derive(Debug, Default)]
-struct LayerInfo {
-    is_prepared: bool,
-    is_being_prepared: bool,
-    refcount: u32,
-    batch_range: Range<u32>,
-    bounding_rect: Option<Rect>,
 }
 
 #[derive(Debug)]
@@ -120,7 +108,6 @@ impl Batcher<'_> {
         scratch.clear();
         Batcher {
             texture_cache,
-            layers: &mut scratch.layers,
             vertices: &mut scratch.vertices,
             indices: &mut scratch.indices,
             instances: &mut scratch.instances,
@@ -136,19 +123,13 @@ impl Batcher<'_> {
     }
 
     pub fn prepare(&mut self, surface_size: UVec2, draw_list: &DrawList) {
-        if draw_list.layers.is_empty() {
+        if draw_list.commands.is_empty() {
             return;
         }
 
         self.cur_surface = draw_list.surface;
         self.cur_surface_size = surface_size;
-
-        self.layers.clear();
-        self.layers
-            .resize_with(draw_list.layers.len(), Default::default);
-
-        self.update_refcounts(draw_list.layers);
-        self.prepare_layer(LayerId(0), draw_list.layers);
+        self.dispatch_commands(draw_list.commands);
     }
 
     pub fn batches(&self) -> &[Batch] {
@@ -167,39 +148,10 @@ impl Batcher<'_> {
         &self.instances
     }
 
-    fn update_refcounts(&mut self, layers: &[Layer<'_>]) {
-        for layer in layers {
-            for command in layer.commands {
-                if let Command::DrawLayer(layer) = command {
-                    self.layers[layer.id.0].refcount += 1;
-                }
-            }
-        }
-    }
-
-    fn prepare_layer(&mut self, layer_id: LayerId, layers: &[Layer<'_>]) {
-        let layer = &mut self.layers[layer_id.0];
-        if layer.is_prepared {
-            return;
-        }
-
-        layer.is_being_prepared = true;
-        layer.batch_range.start = self.batches.len() as u32;
-
-        self.dispatch_commands(layers[layer_id.0].commands, layers);
-
-        let layer = &mut self.layers[layer_id.0];
-        layer.is_being_prepared = false;
-        layer.is_prepared = true;
-        layer.batch_range.end = self.batches.len() as u32;
-
-        self.compute_bouding_rect(layer_id);
-    }
-
-    fn compute_bouding_rect(&mut self, layer_id: LayerId) {
+    fn compute_bouding_rect(&self, batch_range: Range<usize>) -> Option<Rect> {
         let mut rect: Option<Rect> = None;
 
-        for batch_idx in self.layers[layer_id.0].batch_range.clone() {
+        for batch_idx in batch_range {
             for idx in self.batches[batch_idx as usize].index_range.clone() {
                 let idx = self.indices[idx as usize];
                 let pos = self.vertices[idx as usize].pos;
@@ -212,19 +164,23 @@ impl Batcher<'_> {
             }
         }
 
-        self.layers[layer_id.0].bounding_rect = rect;
+        rect
     }
 
-    fn dispatch_commands(&mut self, commands: &[Command], layers: &[Layer<'_>]) {
+    fn dispatch_commands(&mut self, commands: &[Command<'_>]) -> Range<usize> {
+        let first_batch = self.batches.len();
+
         for &command in commands {
             match command {
                 Command::DrawRect(rect) => self.cmd_draw_rect(rect),
                 Command::DrawGlyph(glyph) => self.cmd_draw_glyph(glyph),
-                Command::DrawLayer(layer) => self.cmd_draw_layer(layer, layers),
+                Command::DrawLayer(layer) => self.cmd_draw_layer(layer),
             }
         }
 
         self.flush();
+
+        first_batch..self.batches.len()
     }
 
     fn cmd_draw_rect(&mut self, rect: DrawRect) {
@@ -330,20 +286,14 @@ impl Batcher<'_> {
         self.add_quad(pos, pos + size, tex_min, tex_max, color, instance_id);
     }
 
-    fn cmd_draw_layer(&mut self, layer: DrawLayer, layers: &[Layer<'_>]) {
-        assert!(
-            !self.layers[layer.id.0].is_being_prepared,
-            "recursive layer detected"
-        );
-
-        let is_single_use = self.layers[layer.id.0].refcount == 1;
+    fn cmd_draw_layer(&mut self, layer: DrawLayer<'_>) {
         let is_no_tint = layer.tint == Color::WHITE;
         let is_compatible_scissor = layer.scissor.is_none();
 
-        let is_fast_path = is_single_use && is_no_tint && is_compatible_scissor;
+        let is_fast_path = is_no_tint && is_compatible_scissor;
 
         if is_fast_path {
-            self.dispatch_commands(layers[layer.id.0].commands, layers);
+            self.dispatch_commands(layer.commands);
             return;
         }
 
@@ -352,9 +302,9 @@ impl Batcher<'_> {
         let old_framebuffer = self.cur_framebuffer;
         self.cur_framebuffer.0 += 1;
 
-        self.prepare_layer(layer.id, layers);
+        let batch_range = self.dispatch_commands(layer.commands);
 
-        let Some(rect) = self.layers[layer.id.0].bounding_rect else {
+        let Some(rect) = self.compute_bouding_rect(batch_range) else {
             return;
         };
 

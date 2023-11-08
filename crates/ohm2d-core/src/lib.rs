@@ -21,46 +21,14 @@ use crate::text::FontId;
 #[derive(Debug, Clone, Copy)]
 pub struct DrawList<'a> {
     pub surface: SurfaceId,
-    pub layers: &'a [Layer<'a>],
+    pub commands: &'a [Command<'a>],
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer<'a> {
-    pub commands: &'a [Command],
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub struct LayerId(pub usize);
-
-#[derive(Debug, Clone, Copy)]
-pub struct Scissor {
-    pub pos: Vec2,
-    pub size: Vec2,
-    pub corner_radii: CornerRadii,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Backdrop {
-    Transparent,
-    Fill(Color),
-    Copy,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Effect {
-    Blur(BlurEffect),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct BlurEffect {
-    pub radius: Vec2,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Command {
+pub enum Command<'a> {
     DrawRect(DrawRect),
     DrawGlyph(DrawGlyph),
-    DrawLayer(DrawLayer),
+    DrawLayer(DrawLayer<'a>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -83,10 +51,17 @@ pub struct DrawGlyph {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct DrawLayer {
-    pub id: LayerId,
+pub struct DrawLayer<'a> {
+    pub commands: &'a [Command<'a>],
     pub tint: Color,
     pub scissor: Option<Scissor>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Scissor {
+    pub pos: Vec2,
+    pub size: Vec2,
+    pub corner_radii: CornerRadii,
 }
 
 #[derive(Debug, Clone, Copy)]

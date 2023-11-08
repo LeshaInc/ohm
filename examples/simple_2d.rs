@@ -3,7 +3,7 @@ use ohm2d::math::{vec2, UVec2};
 use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm2d::{
     Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, Graphics,
-    Layer, LayerId, Renderer, Shadow,
+    Renderer, Shadow,
 };
 use winit::dpi::PhysicalSize;
 use winit::event::{Event, WindowEvent};
@@ -140,7 +140,7 @@ fn main() -> Result<()> {
             }));
 
             commands.push(Command::DrawLayer(DrawLayer {
-                id: LayerId(1),
+                commands: &layer_commands,
                 tint: Color::rgba(0.5, 0.5, 0.5, 0.5),
                 scissor: None,
             }));
@@ -173,17 +173,9 @@ fn main() -> Result<()> {
             graphics
                 .render(&[DrawList {
                     surface,
-                    layers: &[
-                        Layer {
-                            commands: &commands,
-                        },
-                        Layer {
-                            commands: &layer_commands,
-                        },
-                    ],
+                    commands: &commands,
                 }])
                 .unwrap();
-
             graphics.present();
         }
 
