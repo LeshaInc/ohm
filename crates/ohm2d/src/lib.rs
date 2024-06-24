@@ -40,8 +40,8 @@ use crate::text::{
     DefaultTextShaper, EmbeddedImageRasterizer, FontDatabase, FontRasterizers, TextShaper,
 };
 
-pub struct Graphics<R: Renderer> {
-    pub renderer: R,
+pub struct Graphics {
+    pub renderer: Box<dyn Renderer>,
     pub texture_cache: TextureCache,
     pub font_db: FontDatabase,
     pub font_rasterizers: FontRasterizers,
@@ -49,16 +49,16 @@ pub struct Graphics<R: Renderer> {
 }
 
 #[cfg(feature = "wgpu")]
-impl Graphics<WgpuRenderer> {
-    pub fn new_wgpu() -> Graphics<WgpuRenderer> {
+impl Graphics {
+    pub fn new_wgpu() -> Graphics {
         Graphics::new(WgpuRenderer::new())
     }
 }
 
-impl<R: Renderer> Graphics<R> {
-    pub fn new(renderer: R) -> Graphics<R> {
+impl Graphics {
+    pub fn new<R: Renderer>(renderer: R) -> Graphics {
         let mut graphics = Graphics {
-            renderer,
+            renderer: Box::new(renderer),
             texture_cache: TextureCache::new(),
             font_db: FontDatabase::new(),
             font_rasterizers: FontRasterizers::new(),
@@ -94,15 +94,13 @@ impl<R: Renderer> Graphics<R> {
                 &mut commands,
             )?;
             self.texture_cache.load_images(&mut commands)?;
-            self.renderer.update_textures(&commands);
+            self.renderer.update_textures(&commands)?;
         }
 
-        self.renderer.render(&self.texture_cache, draw_lists);
-
-        Ok(())
+        self.renderer.render(&self.texture_cache, draw_lists)
     }
 
-    pub fn present(&mut self) {
-        self.renderer.present();
+    pub fn present(&mut self) -> Result<()> {
+        self.renderer.present()
     }
 }

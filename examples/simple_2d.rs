@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use ohm2d::math::{vec2, UVec2};
+use ohm2d::renderer::SurfaceId;
 use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm2d::{
     Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, Graphics,
-    Renderer, Shadow,
+    Shadow,
 };
-use ohm2d_core::renderer::SurfaceId;
-use ohm2d_wgpu::WgpuRenderer;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
@@ -16,7 +15,7 @@ use winit::window::{Window, WindowAttributes, WindowId};
 
 struct AppState {
     window: Arc<Window>,
-    graphics: Graphics<WgpuRenderer>,
+    graphics: Graphics,
     buffer: TextBuffer,
     surface: SurfaceId,
 }
@@ -97,7 +96,8 @@ impl ApplicationHandler for App {
                 state
                     .graphics
                     .renderer
-                    .resize_surface(state.surface, UVec2::new(new_size.width, new_size.height));
+                    .resize_surface(state.surface, UVec2::new(new_size.width, new_size.height))
+                    .unwrap();
                 state.window.request_redraw();
             }
 
@@ -216,7 +216,8 @@ impl ApplicationHandler for App {
                         commands: &commands,
                     }])
                     .unwrap();
-                state.graphics.present();
+
+                state.graphics.present().unwrap();
             }
 
             _ => {}

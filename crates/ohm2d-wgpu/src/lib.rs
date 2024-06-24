@@ -5,12 +5,12 @@ use std::sync::Arc;
 use ohm2d_core::math::{URect, UVec2, Vec2, Vec4};
 use ohm2d_core::renderer::{
     Batcher, BatcherScratch, Instance as BatcherInstance, Renderer, Source, SurfaceId, Vertex,
+    WindowHandle,
 };
 use ohm2d_core::{
     DrawList, Error, ErrorKind, ImageData, ImageFormat, Result, TextureCache, TextureCommand,
     TextureId,
 };
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use self_cell::self_cell;
 use slotmap::SlotMap;
 use wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
@@ -44,12 +44,10 @@ impl WgpuRenderer {
             .as_mut()
             .expect("context hasn't been initialized yet")
     }
+}
 
-    pub fn create_surface(
-        &mut self,
-        window: Arc<dyn WindowHandle>,
-        size: UVec2,
-    ) -> Result<SurfaceId> {
+impl Renderer for WgpuRenderer {
+    fn create_surface(&mut self, window: Arc<dyn WindowHandle>, size: UVec2) -> Result<SurfaceId> {
         let surface =
             OwnedSurface::try_new(window, |window| self.instance.create_surface(&**window))
                 .map_err(|e| Error::wrap(ErrorKind::Gpu, e))?;
@@ -62,36 +60,36 @@ impl WgpuRenderer {
         self.context_mut().create_surface(surface, size)
     }
 
-    pub fn resize_surface(&mut self, id: SurfaceId, new_size: UVec2) {
+    fn resize_surface(&mut self, id: SurfaceId, new_size: UVec2) -> Result<()> {
         self.context_mut().resize_surface(id, new_size);
+        Ok(())
     }
 
-    pub fn destroy_surface(&mut self, id: SurfaceId) {
-        self.context_mut().destroy_surface(id);
-    }
-}
-
-impl Renderer for WgpuRenderer {
     fn get_surface_size(&self, surface: SurfaceId) -> UVec2 {
         self.context().get_surface_size(surface)
     }
 
-    fn update_textures(&mut self, commands: &[TextureCommand]) {
+    fn destroy_surface(&mut self, id: SurfaceId) {
+        self.context_mut().destroy_surface(id);
+    }
+
+    fn update_textures(&mut self, commands: &[TextureCommand]) -> Result<()> {
         self.context_mut().update_textures(commands);
+        Ok(())
     }
 
-    fn render(&mut self, texture_cache: &TextureCache, draw_lists: &[DrawList<'_>]) {
-        if draw_lists.is_empty() {
-            return;
+    fn render(&mut self, texture_cache: &TextureCache, draw_lists: &[DrawList<'_>]) -> Result<()> {
+        if !draw_lists.is_empty() {
+            self.context_mut().render(texture_cache, draw_lists);
         }
-
-        self.context_mut().render(texture_cache, draw_lists);
+        Ok(())
     }
 
-    fn present(&mut self) {
+    fn present(&mut self) -> Result<()> {
         if let Some(context) = &mut self.context {
             context.present();
         }
+        Ok(())
     }
 }
 
@@ -150,10 +148,6 @@ self_cell! {
         dependent: Surface,
     }
 }
-
-pub trait WindowHandle: HasWindowHandle + HasDisplayHandle + Sync + 'static {}
-
-impl<T: HasWindowHandle + HasDisplayHandle + Sync + 'static> WindowHandle for T {}
 
 #[derive(Debug)]
 struct Framebuffer {
