@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ohm2d-core = { workspace = true }
+ohm2d-core.workspace = true
+
 ohm2d-fontdb = { workspace = true, optional = true }
 ohm2d-freetype = { workspace = true, optional = true }
 ohm2d-rustybuzz = { workspace = true, optional = true }
@@ -12,8 +13,8 @@ ohm2d-wgpu = { workspace = true, optional = true }
 ohm2d-zeno = { workspace = true, optional = true }
 
 [dev-dependencies]
-glam = { workspace = true }
-winit = { workspace = true }
+glam.workspace = true
+winit.workspace = true
 
 [features]
 default = ["fontdb", "freetype", "rustybuzz", "wgpu", "zeno"]

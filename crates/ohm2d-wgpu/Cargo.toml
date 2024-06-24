@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ohm2d-core = { workspace = true }
+ohm2d-core.workspace = true
 
-encase = { workspace = true }
-raw-window-handle = { workspace = true }
-slotmap = { workspace = true }
-wgpu = { workspace = true }
-pollster = { workspace = true }
-self_cell = { workspace = true }
+encase.workspace = true
+pollster.workspace = true
+raw-window-handle.workspace = true
+self_cell.workspace = true
+slotmap.workspace = true
+wgpu.workspace = true

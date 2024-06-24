@@ -31,7 +31,7 @@ ttf-parser = "0.21.1"
 unicode-bidi = "0.3.15"
 unicode-linebreak = "0.1.5"
 wgpu = "0.20.1"
-winit = { version = "0.30.3" }
+winit = "0.30.3"
 zeno = "0.3.1"
 
 [profile.dev]

@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ohm2d-core = { workspace = true }
+ohm2d-core.workspace = true
 
-freetype-rs = { workspace = true }
+freetype-rs.workspace = true
