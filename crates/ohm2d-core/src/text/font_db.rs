@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use anyhow::{anyhow, bail, Result};
-
 use crate::text::{FontAttrs, FontFace, FontId};
+use crate::{Error, ErrorKind, Result};
 
 pub trait FontSource: Send + Sync + 'static {
     fn query(&self, attrs: &FontAttrs) -> Option<u64>;
@@ -42,13 +41,13 @@ impl FontDatabase {
 
     pub fn load(&mut self, id: FontId) -> Result<&FontFace> {
         if self.cached_failures.contains(&id) {
-            bail!("Cached failure")
+            return Err(Error::new(ErrorKind::CachedFailure, "cached failure"));
         }
 
         let source = self
             .sources
             .get_mut(id.source_id)
-            .ok_or_else(|| anyhow!("Invalid font id"))?;
+            .ok_or_else(|| Error::new(ErrorKind::InvalidId, "invalid font id"))?;
 
         let face = match source.load(id) {
             Ok(v) => v,

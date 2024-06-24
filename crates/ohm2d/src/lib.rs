@@ -1,4 +1,3 @@
-use anyhow::Result;
 pub use ohm2d_core::*;
 #[cfg(feature = "wgpu")]
 pub use ohm2d_wgpu::WgpuRenderer;

@@ -2,9 +2,10 @@ use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
 use smallvec::{smallvec, SmallVec};
 use ttf_parser::{name_id, Face, Language, Tag};
+
+use crate::{Error, ErrorKind, Result};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct FontId {
@@ -41,10 +42,12 @@ impl FontFace {
         data: Arc<dyn AsRef<[u8]> + Send + Sync>,
         face_index: u32,
     ) -> Result<FontFace> {
-        let face_ref = FaceRef::try_new(data, |data| Face::parse((**data).as_ref(), face_index))?;
+        let face_ref = FaceRef::try_new(data, |data| Face::parse((**data).as_ref(), face_index))
+            .map_err(|e| Error::wrap(ErrorKind::InvalidFont, e))?;
         let face = face_ref.borrow_dependent();
 
-        let attrs = FontAttrs::from_ttfp_face(face).ok_or_else(|| anyhow!("invalid font attrs"))?;
+        let attrs = FontAttrs::from_ttfp_face(face)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidFont, "invalid font attrs"))?;
         let metrics = FontMetrics::from_ttfp_face(face);
 
         Ok(FontFace {

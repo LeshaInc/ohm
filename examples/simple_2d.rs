@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use anyhow::Result;
 use ohm2d::math::{vec2, UVec2};
 use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm2d::{
@@ -225,8 +224,7 @@ impl ApplicationHandler for App {
     }
 }
 
-fn main() -> Result<()> {
-    let event_loop = winit::event_loop::EventLoop::new()?;
-    event_loop.run_app(&mut App::default())?;
-    Ok(())
+fn main() {
+    let event_loop = winit::event_loop::EventLoop::new().unwrap();
+    event_loop.run_app(&mut App::default()).unwrap();
 }

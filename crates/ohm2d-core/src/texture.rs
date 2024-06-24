@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use anyhow::{anyhow, Result};
 use guillotiere::{AllocId, AtlasAllocator};
 use slotmap::SlotMap;
 
 use crate::math::{URect, UVec2, Vec2};
 use crate::text::{FontDatabase, GlyphKey, Rasterizer, SubpixelBin};
-use crate::{AssetPath, Command, DrawList, ImageData, ImageFormat, ImageId, ImageSource};
+use crate::{
+    AssetPath, Command, DrawList, Error, ErrorKind, ImageData, ImageFormat, ImageId, ImageSource,
+    Result,
+};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub struct TextureId(pub u64);
@@ -167,7 +169,12 @@ impl TextureCache {
             let source = self
                 .image_sources
                 .get_mut(image.path.scheme())
-                .ok_or_else(|| anyhow!("No image source for scheme `{}`", image.path.scheme()))?;
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::UnknownSchema,
+                        format!("no image source for scheme `{}`", image.path.scheme()),
+                    )
+                })?;
 
             let image_data = source.load(image.path.as_borrowed(), None)?;
 
@@ -184,7 +191,7 @@ impl TextureCache {
             let (alloc_id, rect) = self
                 .atlases
                 .alloc(&mut self.id_allocator, commands, image_data)
-                .ok_or_else(|| anyhow!("Failed to allocate image"))?;
+                .ok_or_else(|| Error::new(ErrorKind::AtlasAlloc, "failed to allocate image"))?;
 
             image.alloc_id = Some(alloc_id);
             image.rect = rect;
@@ -221,7 +228,7 @@ impl TextureCache {
             let (alloc_id, rect) = self
                 .atlases
                 .alloc(&mut self.id_allocator, commands, result.image)
-                .ok_or_else(|| anyhow!("Failed to allocate glyph"))?;
+                .ok_or_else(|| Error::new(ErrorKind::AtlasAlloc, "failed to allocate glyph"))?;
 
             glyph.alloc_id = Some(alloc_id);
             glyph.rect = rect;

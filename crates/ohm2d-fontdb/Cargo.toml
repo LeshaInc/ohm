@@ -6,5 +6,4 @@ edition = "2021"
 [dependencies]
 ohm2d-core = { workspace = true }
 
-anyhow = { workspace = true }
 fontdb = { workspace = true }

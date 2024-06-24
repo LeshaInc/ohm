@@ -11,8 +11,6 @@ ohm2d-rustybuzz = { workspace = true, optional = true }
 ohm2d-wgpu = { workspace = true, optional = true }
 ohm2d-zeno = { workspace = true, optional = true }
 
-anyhow = { workspace = true }
-
 [dev-dependencies]
 glam = { workspace = true }
 winit = { workspace = true }

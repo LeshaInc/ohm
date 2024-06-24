@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
 use ohm2d_core::text::{FontAttrs, FontFace, FontFamily, FontId, FontSource, FontStyle, FontWidth};
+use ohm2d_core::{Error, ErrorKind, Result};
 
 pub struct SystemFontSource(FontDbSource);
 
@@ -55,7 +55,7 @@ impl FontSource for FontDbSource {
         let (data, face_index) = unsafe {
             self.db
                 .make_shared_face_data(fontdb_id_from_u64(id.opaque_id))
-                .ok_or_else(|| anyhow!("Failed to load font"))?
+                .ok_or_else(|| Error::new(ErrorKind::InvalidFont, "Failed to load font"))?
         };
 
         FontFace::new(id, data, face_index)

@@ -3,10 +3,8 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek};
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Context, Result};
-
 use crate::math::UVec2;
-use crate::AssetPath;
+use crate::{AssetPath, Error, ErrorKind, Result};
 
 slotmap::new_key_type! {
     pub struct ImageId;
@@ -60,8 +58,7 @@ impl ImageSource for FileImageSource {
         let mut path = self.root.clone();
         path.push(asset_path.path());
 
-        let file =
-            File::open(&path).with_context(|| format!("Failed to open {}", path.display()))?;
+        let file = File::open(&path)?;
         let mut reader = BufReader::new(file);
 
         let mut buf = [0; 256];
@@ -73,11 +70,14 @@ impl ImageSource for FileImageSource {
                 path.extension()
                     .and_then(image::ImageFormat::from_extension)
             })
-            .ok_or_else(|| anyhow!("unknown image format"))?;
+            .ok_or_else(|| Error::new(ErrorKind::InvalidImage, "unrecognized image format"))?;
 
         reader.seek(std::io::SeekFrom::Start(0))?;
 
-        let mut image = image::load(reader, format)?;
+        let mut image = image::load(reader, format).map_err(|e| match e {
+            image::ImageError::IoError(e) => e.into(),
+            _ => Error::wrap(ErrorKind::InvalidImage, e),
+        })?;
 
         if let Some(size) = size {
             image = image.resize_exact(size.x, size.y, image::imageops::FilterType::Lanczos3);

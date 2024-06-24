@@ -14,7 +14,6 @@ ohm2d-rustybuzz = { path = "crates/ohm2d-rustybuzz", version = "0.1.0" }
 ohm2d-wgpu = { path = "crates/ohm2d-wgpu", version = "0.1.0" }
 ohm2d-zeno = { path = "crates/ohm2d-zeno", version = "0.1.0" }
 
-anyhow = "1.0"
 encase = { version = "0.9.0", features = ["glam"] }
 fontdb = "0.18.0"
 freetype-rs = "0.37.0"

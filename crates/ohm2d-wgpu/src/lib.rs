@@ -2,12 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 
-use anyhow::{bail, Context, Result};
 use ohm2d_core::math::{URect, UVec2, Vec2, Vec4};
 use ohm2d_core::renderer::{
     Batcher, BatcherScratch, Instance as BatcherInstance, Renderer, Source, SurfaceId, Vertex,
 };
-use ohm2d_core::{DrawList, ImageData, ImageFormat, TextureCache, TextureCommand, TextureId};
+use ohm2d_core::{
+    DrawList, Error, ErrorKind, ImageData, ImageFormat, Result, TextureCache, TextureCommand,
+    TextureId,
+};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use self_cell::self_cell;
 use slotmap::SlotMap;
@@ -49,7 +51,8 @@ impl WgpuRenderer {
         size: UVec2,
     ) -> Result<SurfaceId> {
         let surface =
-            OwnedSurface::try_new(window, |window| self.instance.create_surface(&**window))?;
+            OwnedSurface::try_new(window, |window| self.instance.create_surface(&**window))
+                .map_err(|e| Error::wrap(ErrorKind::Gpu, e))?;
 
         if self.context.is_none() {
             let context = RendererContext::new(&self.instance, &surface)?;
@@ -818,7 +821,7 @@ async fn create_adapter(instance: &Instance, main_surface: &Surface<'_>) -> Resu
         .await;
 
     let Some(adapter) = adapter else {
-        bail!("No compatible video adapters");
+        return Err(Error::new(ErrorKind::Gpu, "no compatible video adapters"));
     };
 
     Ok(adapter)
@@ -835,7 +838,7 @@ async fn create_device(adapter: &Adapter) -> Result<(Device, Queue)> {
             None,
         )
         .await
-        .context("Failed to create graphics device")
+        .map_err(|e| Error::new(ErrorKind::Gpu, "failed to create graphics device").with_source(e))
 }
 
 fn create_uber_bind_group_layout(device: &Device) -> BindGroupLayout {
