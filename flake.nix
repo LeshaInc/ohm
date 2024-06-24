@@ -33,7 +33,6 @@
             lld
             mdbook
             pkg-config
-            rnix-lsp
             rust-toolchain
             stdenv.cc.cc.lib
             udev
