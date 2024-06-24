@@ -98,7 +98,7 @@ impl<R: Renderer> Graphics<R> {
             self.renderer.update_textures(&commands);
         }
 
-        self.renderer.render(&self.texture_cache, &draw_lists);
+        self.renderer.render(&self.texture_cache, draw_lists);
 
         Ok(())
     }

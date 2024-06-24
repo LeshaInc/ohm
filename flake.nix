@@ -39,6 +39,7 @@
             vulkan-loader
             vulkan-validation-layers
             wayland
+            freetype
             xorg.libX11
             xorg.libXcursor
             xorg.libXi

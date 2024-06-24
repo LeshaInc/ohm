@@ -133,26 +133,26 @@ impl Batcher<'_> {
     }
 
     pub fn batches(&self) -> &[Batch] {
-        &self.batches
+        self.batches
     }
 
     pub fn vertices(&self) -> &[Vertex] {
-        &self.vertices
+        self.vertices
     }
 
     pub fn indices(&self) -> &[u32] {
-        &self.indices
+        self.indices
     }
 
     pub fn instances(&self) -> &[Instance] {
-        &self.instances
+        self.instances
     }
 
     fn compute_bouding_rect(&self, batch_range: Range<usize>) -> Option<Rect> {
         let mut rect: Option<Rect> = None;
 
         for batch_idx in batch_range {
-            for idx in self.batches[batch_idx as usize].index_range.clone() {
+            for idx in self.batches[batch_idx].index_range.clone() {
                 let idx = self.indices[idx as usize];
                 let pos = self.vertices[idx as usize].pos;
                 if let Some(rect) = &mut rect {

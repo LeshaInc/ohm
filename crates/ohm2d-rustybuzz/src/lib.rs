@@ -65,7 +65,7 @@ impl TextShaper for RustybuzzShaper {
             Direction::LeftToRight
         });
 
-        let glyphs = rustybuzz::shape(&face, &[], buffer);
+        let glyphs = rustybuzz::shape(face, &[], buffer);
 
         let it = glyphs.glyph_infos().iter().zip(glyphs.glyph_positions());
         buf.extend(it.map(|(info, pos)| ShapedGlyph {

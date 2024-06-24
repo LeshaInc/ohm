@@ -83,7 +83,7 @@ impl Rasterizer for FreetypeRasterizer {
             _ => return None,
         };
 
-        let pitch = bitmap.pitch().abs() as usize;
+        let pitch = bitmap.pitch().unsigned_abs() as usize;
         let width = bitmap.width() as usize;
         let height = bitmap.rows() as usize;
 
@@ -111,5 +111,11 @@ impl Rasterizer for FreetypeRasterizer {
         };
 
         Some(RasterizedGlyph { image, offset })
+    }
+}
+
+impl Default for FreetypeRasterizer {
+    fn default() -> Self {
+        FreetypeRasterizer::new()
     }
 }

@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 use ttf_parser::{name_id, Face, Language, Tag};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -44,10 +44,8 @@ impl FontFace {
         let face_ref = FaceRef::try_new(data, |data| Face::parse((**data).as_ref(), face_index))?;
         let face = face_ref.borrow_dependent();
 
-        let attrs =
-            FontAttrs::from_ttfp_face(&face).ok_or_else(|| anyhow!("invalid font attrs"))?;
-
-        let metrics = FontMetrics::from_ttfp_face(&face);
+        let attrs = FontAttrs::from_ttfp_face(face).ok_or_else(|| anyhow!("invalid font attrs"))?;
+        let metrics = FontMetrics::from_ttfp_face(face);
 
         Ok(FontFace {
             id,
@@ -179,13 +177,12 @@ pub struct FontFamilies {
 
 impl FontFamilies {
     pub fn new(base: FontFamily) -> FontFamilies {
-        (FontFamilies {
-            list: SmallVec::new(),
-        })
-        .add(base)
+        FontFamilies {
+            list: smallvec![base],
+        }
     }
 
-    pub fn add(mut self, family: FontFamily) -> Self {
+    pub fn with(mut self, family: FontFamily) -> Self {
         self.list.push(family);
         self
     }
@@ -194,6 +191,7 @@ impl FontFamilies {
         &self.list[0]
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.list.len()
     }

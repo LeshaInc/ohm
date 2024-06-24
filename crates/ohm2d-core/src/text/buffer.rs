@@ -201,7 +201,7 @@ impl TextBuffer {
         }
 
         let font = font_db.query(&Self::font_attrs(&section.attrs, index))?;
-        let index = index.max(section.fonts.len());
+        let index = index.min(section.fonts.len());
 
         section.fonts.insert(index, font);
 
@@ -776,5 +776,11 @@ impl TextBuffer {
 
     pub fn runs(&self) -> &[Run] {
         &self.runs
+    }
+}
+
+impl Default for TextBuffer {
+    fn default() -> Self {
+        TextBuffer::new()
     }
 }

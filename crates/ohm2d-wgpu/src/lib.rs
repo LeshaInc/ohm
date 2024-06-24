@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use ohm2d_core::math::{URect, UVec2, Vec2, Vec4};
@@ -6,9 +8,10 @@ use ohm2d_core::renderer::{
     Batcher, BatcherScratch, Instance as BatcherInstance, Renderer, Source, SurfaceId, Vertex,
 };
 use ohm2d_core::{DrawList, ImageData, ImageFormat, TextureCache, TextureCommand, TextureId};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use self_cell::self_cell;
 use slotmap::SlotMap;
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
 use wgpu::*;
 
 const MAX_INSTANCES_PER_BUFFER: usize = 128;
@@ -40,12 +43,13 @@ impl WgpuRenderer {
             .expect("context hasn't been initialized yet")
     }
 
-    pub unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
+    pub fn create_surface(
         &mut self,
-        handle: &W,
+        window: Arc<dyn WindowHandle>,
         size: UVec2,
     ) -> Result<SurfaceId> {
-        let surface = unsafe { self.instance.create_surface(handle)? };
+        let surface =
+            OwnedSurface::try_new(window, |window| self.instance.create_surface(&**window))?;
 
         if self.context.is_none() {
             let context = RendererContext::new(&self.instance, &surface)?;
@@ -88,6 +92,12 @@ impl Renderer for WgpuRenderer {
     }
 }
 
+impl Default for WgpuRenderer {
+    fn default() -> Self {
+        WgpuRenderer::new()
+    }
+}
+
 #[derive(Debug)]
 struct RendererContext {
     batcher_scratch: BatcherScratch,
@@ -115,12 +125,32 @@ struct TextureEntry {
     mipmaps_dirty: bool,
 }
 
-#[derive(Debug)]
 struct SurfaceEntry {
-    surface: Surface,
+    surface: OwnedSurface,
     config: SurfaceConfiguration,
     framebuffers: Vec<Framebuffer>,
 }
+
+impl fmt::Debug for SurfaceEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SurfaceEntry")
+            .field("config", &self.config)
+            .field("framebuffers", &self.framebuffers)
+            .finish_non_exhaustive()
+    }
+}
+
+self_cell! {
+    struct OwnedSurface {
+        owner: Arc<dyn WindowHandle>,
+        #[covariant]
+        dependent: Surface,
+    }
+}
+
+pub trait WindowHandle: HasWindowHandle + HasDisplayHandle + Sync + 'static {}
+
+impl<T: HasWindowHandle + HasDisplayHandle + Sync + 'static> WindowHandle for T {}
 
 #[derive(Debug)]
 struct Framebuffer {
@@ -129,8 +159,9 @@ struct Framebuffer {
 }
 
 impl RendererContext {
-    fn new(instance: &Instance, main_surface: &Surface) -> Result<RendererContext> {
-        let adapter = pollster::block_on(create_adapter(&instance, main_surface))?;
+    fn new(instance: &Instance, main_surface: &OwnedSurface) -> Result<RendererContext> {
+        let adapter =
+            pollster::block_on(create_adapter(instance, main_surface.borrow_dependent()))?;
         let (device, queue) = pollster::block_on(create_device(&adapter))?;
 
         let uber_bind_group_layout = create_uber_bind_group_layout(&device);
@@ -168,8 +199,8 @@ impl RendererContext {
         })
     }
 
-    fn create_surface(&mut self, surface: Surface, size: UVec2) -> Result<SurfaceId> {
-        let caps = surface.get_capabilities(&self.adapter);
+    fn create_surface(&mut self, surface: OwnedSurface, size: UVec2) -> Result<SurfaceId> {
+        let caps = surface.borrow_dependent().get_capabilities(&self.adapter);
 
         let formats = caps.formats.iter().copied();
         let format = formats
@@ -193,8 +224,10 @@ impl RendererContext {
             present_mode: PresentMode::AutoVsync,
             alpha_mode,
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
-        surface.configure(&self.device, &config);
+
+        surface.borrow_dependent().configure(&self.device, &config);
 
         let framebuffer = create_framebuffer(&self.device, size.x, size.y);
 
@@ -211,7 +244,10 @@ impl RendererContext {
         let entry = &mut self.surfaces[id];
         entry.config.width = size.x;
         entry.config.height = size.y;
-        entry.surface.configure(&self.device, &entry.config);
+        entry
+            .surface
+            .borrow_dependent()
+            .configure(&self.device, &entry.config);
 
         let framebuffer = create_framebuffer(&self.device, size.x, size.y);
         entry.framebuffers = vec![framebuffer];
@@ -243,9 +279,12 @@ impl RendererContext {
             view_formats: &[],
         };
 
-        let texture = self
-            .device
-            .create_texture_with_data(&self.queue, &desc, &data.data);
+        let texture = self.device.create_texture_with_data(
+            &self.queue,
+            &desc,
+            TextureDataOrder::LayerMajor,
+            &data.data,
+        );
         let view = texture.create_view(&Default::default());
 
         self.textures.insert(
@@ -407,10 +446,12 @@ impl RendererContext {
                     resolve_target: None,
                     ops: Operations {
                         load: LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
+                        store: StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
 
             let blit_render_pipeline = self
@@ -625,10 +666,12 @@ impl RendererContext {
                     resolve_target: None,
                     ops: Operations {
                         load: load_op,
-                        store: true,
+                        store: StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
 
             pass.set_pipeline(&self.uber_render_pipeline);
@@ -662,6 +705,7 @@ impl RendererContext {
             let surface_format = surface_entry.config.format;
             let frame = surface_entry
                 .surface
+                .borrow_dependent()
                 .get_current_texture()
                 .expect("Failed to acquire next swap chain texture");
             let surface_view = frame.texture.create_view(&TextureViewDescriptor::default());
@@ -687,10 +731,12 @@ impl RendererContext {
                     resolve_target: None,
                     ops: Operations {
                         load: LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
+                        store: StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
 
             let blit_render_pipeline = self
@@ -705,7 +751,7 @@ impl RendererContext {
                     )
                 });
 
-            rpass.set_pipeline(&blit_render_pipeline);
+            rpass.set_pipeline(blit_render_pipeline);
             rpass.set_bind_group(0, &bind_group, &[]);
             rpass.draw(0..3, 0..1);
 
@@ -762,7 +808,7 @@ struct RectInstances {
     arr: [OurInstance; MAX_INSTANCES_PER_BUFFER],
 }
 
-async fn create_adapter(instance: &Instance, main_surface: &Surface) -> Result<Adapter> {
+async fn create_adapter(instance: &Instance, main_surface: &Surface<'_>) -> Result<Adapter> {
     let adapter = instance
         .request_adapter(&RequestAdapterOptions {
             power_preference: PowerPreference::HighPerformance,
@@ -783,8 +829,8 @@ async fn create_device(adapter: &Adapter) -> Result<(Device, Queue)> {
         .request_device(
             &DeviceDescriptor {
                 label: None,
-                features: Features::empty(),
-                limits: Limits::downlevel_defaults().using_resolution(adapter.limits()),
+                required_features: Features::empty(),
+                required_limits: Limits::downlevel_defaults().using_resolution(adapter.limits()),
             },
             None,
         )
@@ -887,10 +933,7 @@ fn create_vertex_buffer(device: &Device, vertices: &[Vertex]) -> Buffer {
 
 fn create_index_buffer(device: &Device, data: &[u32]) -> Buffer {
     let contents = unsafe {
-        std::slice::from_raw_parts(
-            data.as_ptr() as *const u8,
-            data.len() * std::mem::size_of::<u32>(),
-        )
+        std::slice::from_raw_parts(data.as_ptr() as *const u8, std::mem::size_of_val(data))
     };
 
     device.create_buffer_init(&BufferInitDescriptor {
@@ -1046,6 +1089,7 @@ fn create_uber_render_pipeline(
                     },
                 ],
             }],
+            compilation_options: Default::default(),
         },
         primitive: PrimitiveState::default(),
         depth_stencil: None,
@@ -1058,6 +1102,7 @@ fn create_uber_render_pipeline(
                 blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                 write_mask: ColorWrites::all(),
             })],
+            compilation_options: Default::default(),
         }),
         multiview: None,
     })
@@ -1076,6 +1121,7 @@ fn create_blit_render_pipeline(
             module: shader_module,
             entry_point: "vs_main",
             buffers: &[],
+            compilation_options: Default::default(),
         },
         primitive: PrimitiveState::default(),
         depth_stencil: None,
@@ -1088,6 +1134,7 @@ fn create_blit_render_pipeline(
                 blend: None,
                 write_mask: ColorWrites::all(),
             })],
+            compilation_options: Default::default(),
         }),
         multiview: None,
     })
@@ -1110,6 +1157,7 @@ fn create_white_texture_view(device: &Device, queue: &Queue) -> TextureView {
             usage: TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         },
+        TextureDataOrder::LayerMajor,
         &[255, 255, 255, 255],
     );
 

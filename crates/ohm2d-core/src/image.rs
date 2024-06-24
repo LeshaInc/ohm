@@ -65,13 +65,13 @@ impl ImageSource for FileImageSource {
         let mut reader = BufReader::new(file);
 
         let mut buf = [0; 256];
-        reader.read(&mut buf)?;
+        let _ = reader.read(&mut buf)?;
 
         let format = image::guess_format(&buf)
             .ok()
             .or_else(|| {
                 path.extension()
-                    .and_then(|ext| image::ImageFormat::from_extension(ext))
+                    .and_then(image::ImageFormat::from_extension)
             })
             .ok_or_else(|| anyhow!("unknown image format"))?;
 
