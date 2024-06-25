@@ -773,6 +773,7 @@ impl RendererContext {
 #[derive(Debug, Clone, Copy)]
 struct OurVertex {
     pos: Vec2,
+    local_pos: Vec2,
     tex: Vec2,
     color: Vec4,
     instance_id: u32,
@@ -786,7 +787,6 @@ struct OurInstance {
     border_color: Vec4,
     shadow_color: Vec4,
     shadow_offset: Vec2,
-    pos: Vec2,
     size: Vec2,
     border_width: f32,
     shadow_blur_radius: f32,
@@ -908,6 +908,7 @@ fn create_vertex_buffer(device: &Device, vertices: &[Vertex]) -> Buffer {
         .iter()
         .map(|v| OurVertex {
             pos: v.pos,
+            local_pos: v.local_pos,
             tex: v.tex,
             color: v.color,
             instance_id: v.instance_id,
@@ -973,7 +974,6 @@ fn create_uber_bind_group(
             border_color: v.border_color,
             shadow_color: v.shadow_color,
             shadow_offset: v.shadow_offset,
-            pos: v.pos,
             size: v.size,
             border_width: v.border_width,
             shadow_blur_radius: v.shadow_blur_radius,
@@ -1061,7 +1061,7 @@ fn create_uber_render_pipeline(
             module: shader_module,
             entry_point: "vs_main",
             buffers: &[VertexBufferLayout {
-                array_stride: 36,
+                array_stride: 44,
                 step_mode: VertexStepMode::Vertex,
                 attributes: &[
                     VertexAttribute {
@@ -1075,14 +1075,19 @@ fn create_uber_render_pipeline(
                         shader_location: 1,
                     },
                     VertexAttribute {
-                        format: VertexFormat::Float32x4,
+                        format: VertexFormat::Float32x2,
                         offset: 16,
                         shader_location: 2,
                     },
                     VertexAttribute {
-                        format: VertexFormat::Uint32,
-                        offset: 32,
+                        format: VertexFormat::Float32x4,
+                        offset: 24,
                         shader_location: 3,
+                    },
+                    VertexAttribute {
+                        format: VertexFormat::Uint32,
+                        offset: 40,
+                        shader_location: 4,
                     },
                 ],
             }],

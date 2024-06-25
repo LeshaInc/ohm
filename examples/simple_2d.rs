@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ohm2d::math::{vec2, UVec2};
+use ohm2d::math::{vec2, Affine2, UVec2};
 use ohm2d::renderer::SurfaceId;
 use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm2d::{
@@ -154,10 +154,10 @@ impl ApplicationHandler for App {
                 let mut layer_commands = Vec::new();
 
                 let shadow = Some(Shadow {
-                    blur_radius: 12.0,
+                    blur_radius: 0.0,
                     spread_radius: 0.0,
-                    offset: vec2(0.0, 4.0),
-                    color: Color::rgba(0.0, 0.0, 0.0, 1.0),
+                    offset: vec2(8.0, 4.0),
+                    color: Color::rgba(0.0, 0.0, 0.0, 0.5),
                 });
 
                 layer_commands.push(Command::DrawRect(DrawRect {
@@ -165,7 +165,10 @@ impl ApplicationHandler for App {
                     size: vec2(100.0, 100.0),
                     fill: Fill::Solid(Color::rgb(1.0, 0.0, 0.0)),
                     corner_radii: CornerRadii::new_equal(8.0),
-                    border: None,
+                    border: Some(Border {
+                        color: Color::BLACK,
+                        width: 2.0,
+                    }),
                     shadow,
                 }));
 
@@ -174,7 +177,10 @@ impl ApplicationHandler for App {
                     size: vec2(100.0, 100.0),
                     fill: Fill::Solid(Color::rgb(0.0, 1.0, 0.0)),
                     corner_radii: CornerRadii::new_equal(8.0),
-                    border: None,
+                    border: Some(Border {
+                        color: Color::BLACK,
+                        width: 2.0,
+                    }),
                     shadow,
                 }));
 
@@ -182,6 +188,11 @@ impl ApplicationHandler for App {
                     commands: &layer_commands,
                     tint: Color::rgba(0.5, 0.5, 0.5, 0.5),
                     scissor: None,
+                    transform: Affine2::from_scale_angle_translation(
+                        vec2(2.0, 2.0),
+                        30f32.to_radians(),
+                        vec2(600.0, -200.0),
+                    ),
                 }));
 
                 let shadow = Some(Shadow {
@@ -196,7 +207,10 @@ impl ApplicationHandler for App {
                     size: vec2(100.0, 100.0),
                     fill: Fill::Solid(Color::rgba(0.5, 0.0, 0.0, 0.5)),
                     corner_radii: CornerRadii::new_equal(8.0),
-                    border: None,
+                    border: Some(Border {
+                        color: Color::BLACK,
+                        width: 2.0,
+                    }),
                     shadow,
                 }));
 
@@ -205,7 +219,10 @@ impl ApplicationHandler for App {
                     size: vec2(100.0, 100.0),
                     fill: Fill::Solid(Color::rgba(0.0, 0.5, 0.0, 0.5)),
                     corner_radii: CornerRadii::new_equal(8.0),
-                    border: None,
+                    border: Some(Border {
+                        color: Color::BLACK,
+                        width: 2.0,
+                    }),
                     shadow,
                 }));
 

@@ -10,7 +10,6 @@ struct RectInstance {
     border_color: vec4<f32>,
     shadow_color: vec4<f32>,
     shadow_offset: vec2<f32>,
-    pos: vec2<f32>,
     size: vec2<f32>,
     border_width: f32,
     shadow_blur_radius: f32,
@@ -32,9 +31,10 @@ var texture_sampler: sampler;
 
 struct VertexInput {
     @location(0) pos: vec2<f32>,    
-    @location(1) tex: vec2<f32>,    
-    @location(2) color: vec4<f32>,
-    @location(3) instance_id: u32,
+    @location(1) local_pos: vec2<f32>,    
+    @location(2) tex: vec2<f32>,    
+    @location(3) color: vec4<f32>,
+    @location(4) instance_id: u32,
 }
 
 struct VertexOutput {
@@ -56,7 +56,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
         1.0
     );
 
-    out.pos = in.pos;
+    out.pos = in.local_pos;
     out.tex = in.tex;
     out.color = in.color;
     out.instance_id = in.instance_id;
@@ -78,23 +78,25 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let rect = rect_instances.arr[in.instance_id];
 
-    let shadow_radius = rect.shadow_blur_radius + rect.shadow_spread_radius;
-    let pos = (in.pos - rect.pos) - rect.size / 2.0;
+    let pos = in.pos - rect.size / 2.0;
 
     let dist = sdf_rounded_rect(pos, rect.size / 2.0, rect.corner_radii);
-    let mask = saturate(0.5 - dist);
-    let border_mask = saturate(0.5 - dist - rect.border_width);
+    let dist_change = fwidth(dist) * 0.5;
+    
+    let mask = smoothstep(dist_change, -dist_change, dist);
+    let border_mask = smoothstep(dist_change, -dist_change, dist + rect.border_width);
     var color = mix(rect.border_color, in.color * base_color, border_mask);
 
-    if shadow_radius > 0.0 {
+    if rect.shadow_color.a > 0.0 {
         let size = rect.size / 2.0 + rect.shadow_spread_radius;
         var radii = rect.corner_radii;
         radii += sign(radii) * rect.shadow_spread_radius;
         
         var shadow = 0.0;
         if rect.shadow_blur_radius < 1.0 {
-            let shadow_dist = sdf_rounded_rect(pos, size, radii);
-            shadow = saturate(0.5 - shadow_dist);
+            let shadow_dist = sdf_rounded_rect(pos - rect.shadow_offset, size, radii);
+            let shadow_dist_change = fwidth(shadow_dist) * 0.5;
+            shadow = smoothstep(shadow_dist_change, -shadow_dist_change, shadow_dist);
         } else {
             let sigma = 0.5 * rect.shadow_blur_radius;
             shadow = sdf_shadow(pos - rect.shadow_offset, size, radii, sigma);

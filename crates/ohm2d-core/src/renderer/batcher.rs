@@ -1,5 +1,7 @@
 use std::ops::Range;
 
+use glam::Affine2;
+
 use super::SurfaceId;
 use crate::math::{Rect, UVec2, Vec2, Vec4};
 use crate::text::{GlyphKey, SubpixelBin};
@@ -15,6 +17,7 @@ pub const INSTANCE_FILL_GRAY: u32 = 4294967294;
 #[derive(Debug, Clone, Copy)]
 pub struct Vertex {
     pub pos: Vec2,
+    pub local_pos: Vec2,
     pub tex: Vec2,
     pub color: Vec4,
     pub instance_id: u32,
@@ -27,11 +30,22 @@ pub struct Instance {
     pub border_color: Vec4,
     pub shadow_color: Vec4,
     pub shadow_offset: Vec2,
-    pub pos: Vec2,
     pub size: Vec2,
     pub border_width: f32,
     pub shadow_blur_radius: f32,
     pub shadow_spread_radius: f32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct Quad {
+    min: Vec2,
+    max: Vec2,
+    local_min: Vec2,
+    local_max: Vec2,
+    tex_min: Vec2,
+    tex_max: Vec2,
+    color: Vec4,
+    instance_id: u32,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
@@ -68,6 +82,7 @@ pub struct Batcher<'a> {
     max_instances_per_buffer: usize,
     cur_instance_buffer_id: usize,
     last_index: u32,
+    transform_stack: Vec<Affine2>,
 }
 
 #[derive(Debug)]
@@ -106,6 +121,7 @@ impl Batcher<'_> {
             max_instances_per_buffer,
             cur_instance_buffer_id: 0,
             last_index: 0,
+            transform_stack: Vec::new(),
         }
     }
 
@@ -116,7 +132,7 @@ impl Batcher<'_> {
 
         self.cur_surface = draw_list.surface;
         self.cur_surface_size = surface_size;
-        self.dispatch_commands(draw_list.commands);
+        self.dispatch_commands(draw_list.commands, Affine2::IDENTITY);
     }
 
     pub fn batches(&self) -> &[Batch] {
@@ -154,8 +170,25 @@ impl Batcher<'_> {
         rect
     }
 
-    fn dispatch_commands(&mut self, commands: &[Command<'_>]) -> Range<usize> {
+    fn push_transform(&mut self, transform: Affine2) {
+        let transform = self
+            .transform_stack
+            .last()
+            .map(|v| *v * transform)
+            .unwrap_or(transform);
+        self.transform_stack.push(transform);
+    }
+
+    fn pop_transform(&mut self) {
+        self.transform_stack.pop();
+    }
+
+    fn dispatch_commands(&mut self, commands: &[Command<'_>], transform: Affine2) -> Range<usize> {
         let first_batch = self.batches.len();
+
+        if transform != Affine2::IDENTITY {
+            self.push_transform(transform);
+        }
 
         for &command in commands {
             match command {
@@ -163,6 +196,10 @@ impl Batcher<'_> {
                 Command::DrawGlyph(glyph) => self.cmd_draw_glyph(glyph),
                 Command::DrawLayer(layer) => self.cmd_draw_layer(layer),
             }
+        }
+
+        if transform != Affine2::IDENTITY {
+            self.pop_transform();
         }
 
         self.flush();
@@ -195,14 +232,16 @@ impl Batcher<'_> {
             && rect.shadow.is_none()
             && rect.corner_radii == CornerRadii::default()
         {
-            self.add_quad(
-                rect.pos,
-                rect.pos + rect.size,
+            self.add_quad(Quad {
+                min: rect.pos,
+                max: rect.pos + rect.size,
+                local_min: Vec2::ZERO,
+                local_max: Vec2::ZERO,
                 tex_min,
                 tex_max,
-                color,
-                INSTANCE_FILL,
-            );
+                color: color.into(),
+                instance_id: INSTANCE_FILL,
+            });
 
             return;
         }
@@ -216,7 +255,6 @@ impl Batcher<'_> {
             border_color: rect.border.map(|b| b.color).unwrap_or(color).into(),
             shadow_color: rect.shadow.map(|s| s.color).unwrap_or(color).into(),
             shadow_offset,
-            pos: rect.pos,
             size: rect.size,
             border_width: rect.border.map(|b| b.width).unwrap_or(0.0),
             shadow_blur_radius,
@@ -238,7 +276,16 @@ impl Batcher<'_> {
         tex_min -= (rect_min - min) * tex_size / rect.size;
         tex_max += (max - rect_max) * tex_size / rect.size;
 
-        self.add_quad(min, max, tex_min, tex_max, color, instance_id);
+        self.add_quad(Quad {
+            min,
+            max,
+            local_min: min - rect.pos,
+            local_max: max - rect.pos,
+            tex_min,
+            tex_max,
+            color: color.into(),
+            instance_id,
+        });
     }
 
     fn cmd_draw_glyph(&mut self, glyph: DrawGlyph) {
@@ -270,7 +317,16 @@ impl Batcher<'_> {
             (Color::WHITE, INSTANCE_FILL)
         };
 
-        self.add_quad(pos, pos + size, tex_min, tex_max, color, instance_id);
+        self.add_quad(Quad {
+            min: pos,
+            max: pos + size,
+            local_min: Vec2::ZERO,
+            local_max: Vec2::ZERO,
+            tex_min,
+            tex_max,
+            color: color.into(),
+            instance_id,
+        });
     }
 
     fn cmd_draw_layer(&mut self, layer: DrawLayer<'_>) {
@@ -280,7 +336,7 @@ impl Batcher<'_> {
         let is_fast_path = is_no_tint && is_compatible_scissor;
 
         if is_fast_path {
-            self.dispatch_commands(layer.commands);
+            self.dispatch_commands(layer.commands, layer.transform);
             return;
         }
 
@@ -289,7 +345,7 @@ impl Batcher<'_> {
         let old_framebuffer = self.cur_framebuffer;
         self.cur_framebuffer.0 += 1;
 
-        let batch_range = self.dispatch_commands(layer.commands);
+        let batch_range = self.dispatch_commands(layer.commands, layer.transform);
 
         let Some(rect) = self.compute_bouding_rect(batch_range) else {
             return;
@@ -301,14 +357,16 @@ impl Batcher<'_> {
         let tex_min = rect.min / self.cur_surface_size.as_vec2();
         let tex_max = rect.max / self.cur_surface_size.as_vec2();
 
-        self.add_quad(
-            rect.min,
-            rect.max,
+        self.add_quad(Quad {
+            min: rect.min,
+            max: rect.max,
+            local_min: Vec2::ZERO,
+            local_max: Vec2::ZERO,
             tex_min,
             tex_max,
-            layer.tint,
-            INSTANCE_FILL,
-        );
+            color: layer.tint.into(),
+            instance_id: INSTANCE_FILL,
+        });
     }
 
     fn flush(&mut self) {
@@ -335,15 +393,14 @@ impl Batcher<'_> {
         self.cur_source = source;
     }
 
-    fn add_vertex(&mut self, pos: Vec2, tex: Vec2, color: Color, instance_id: u32) -> u32 {
+    fn add_vertex(&mut self, mut vertex: Vertex) -> u32 {
         let idx = self.vertices.len() as u32;
 
-        self.vertices.push(Vertex {
-            pos,
-            tex,
-            color: color.into(),
-            instance_id,
-        });
+        if let Some(transform) = self.transform_stack.last() {
+            vertex.pos = transform.transform_point2(vertex.pos);
+        }
+
+        self.vertices.push(vertex);
 
         idx
     }
@@ -359,40 +416,35 @@ impl Batcher<'_> {
         idx
     }
 
-    fn add_quad(
-        &mut self,
-        min: Vec2,
-        max: Vec2,
-        tex_min: Vec2,
-        tex_max: Vec2,
-        color: Color,
-        instance_id: u32,
-    ) {
-        let a = self.add_vertex(
-            Vec2::new(min.x, min.y),
-            Vec2::new(tex_min.x, tex_min.y),
-            color,
-            instance_id,
-        );
-        let b = self.add_vertex(
-            Vec2::new(max.x, min.y),
-            Vec2::new(tex_max.x, tex_min.y),
-            color,
-            instance_id,
-        );
-        let c = self.add_vertex(
-            Vec2::new(max.x, max.y),
-            Vec2::new(tex_max.x, tex_max.y),
-            color,
-            instance_id,
-        );
-        let d = self.add_vertex(
-            Vec2::new(min.x, max.y),
-            Vec2::new(tex_min.x, tex_max.y),
-            color,
-            instance_id,
-        );
-
+    fn add_quad(&mut self, quad: Quad) {
+        let a = self.add_vertex(Vertex {
+            pos: Vec2::new(quad.min.x, quad.min.y),
+            local_pos: Vec2::new(quad.local_min.x, quad.local_min.y),
+            tex: Vec2::new(quad.tex_min.x, quad.tex_min.y),
+            color: quad.color,
+            instance_id: quad.instance_id,
+        });
+        let b = self.add_vertex(Vertex {
+            pos: Vec2::new(quad.max.x, quad.min.y),
+            local_pos: Vec2::new(quad.local_max.x, quad.local_min.y),
+            tex: Vec2::new(quad.tex_max.x, quad.tex_min.y),
+            color: quad.color,
+            instance_id: quad.instance_id,
+        });
+        let c = self.add_vertex(Vertex {
+            pos: Vec2::new(quad.max.x, quad.max.y),
+            local_pos: Vec2::new(quad.local_max.x, quad.local_max.y),
+            tex: Vec2::new(quad.tex_max.x, quad.tex_max.y),
+            color: quad.color,
+            instance_id: quad.instance_id,
+        });
+        let d = self.add_vertex(Vertex {
+            pos: Vec2::new(quad.min.x, quad.max.y),
+            local_pos: Vec2::new(quad.local_min.x, quad.local_max.y),
+            tex: Vec2::new(quad.tex_min.x, quad.tex_max.y),
+            color: quad.color,
+            instance_id: quad.instance_id,
+        });
         self.indices.extend_from_slice(&[a, b, c, c, d, a]);
     }
 }

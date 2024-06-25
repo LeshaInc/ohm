@@ -17,7 +17,7 @@ pub use self::image::*;
 pub use self::renderer::Renderer;
 use self::renderer::SurfaceId;
 pub use self::texture::*;
-use crate::math::{URect, Vec2};
+use crate::math::{Affine2, URect, Vec2};
 use crate::text::FontId;
 
 #[derive(Debug, Clone, Copy)]
@@ -57,6 +57,7 @@ pub struct DrawLayer<'a> {
     pub commands: &'a [Command<'a>],
     pub tint: Color,
     pub scissor: Option<Scissor>,
+    pub transform: Affine2,
 }
 
 #[derive(Debug, Clone, Copy)]
