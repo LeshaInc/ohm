@@ -94,7 +94,7 @@ impl Graphics {
                 &mut commands,
             )?;
             self.texture_cache.load_images(&mut commands)?;
-            self.renderer.update_textures(&commands)?;
+            self.renderer.update_textures(&mut commands)?;
         }
 
         self.renderer.render(&self.texture_cache, draw_lists)

@@ -21,7 +21,7 @@ pub trait Renderer: Send + Sync + 'static {
 
     fn destroy_surface(&mut self, id: SurfaceId);
 
-    fn update_textures(&mut self, commands: &[TextureCommand]) -> Result<()>;
+    fn update_textures(&mut self, commands: &mut Vec<TextureCommand>) -> Result<()>;
 
     fn render(&mut self, texture_cache: &TextureCache, draw_lists: &[DrawList<'_>]) -> Result<()>;
 

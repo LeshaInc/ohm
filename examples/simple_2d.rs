@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use ohm2d::math::{vec2, Affine2, UVec2};
@@ -7,6 +8,7 @@ use ohm2d::{
     Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, Graphics,
     Shadow,
 };
+use ohm2d_core::{AssetPath, FileImageSource, FillImage};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
@@ -37,6 +39,13 @@ impl ApplicationHandler for App {
             .unwrap();
 
         let mut graphics = Graphics::new_wgpu();
+
+        let mut path = PathBuf::from(file!());
+        path.pop();
+        graphics
+            .texture_cache
+            .add_image_source(FileImageSource::new(path));
+
         let surface = graphics
             .renderer
             .create_surface(window.clone(), UVec2::new(800, 600))
@@ -225,6 +234,26 @@ impl ApplicationHandler for App {
                     }),
                     shadow,
                 }));
+
+                let image_id = state
+                    .graphics
+                    .texture_cache
+                    .add_image(AssetPath::new("file:kitten.jpg"));
+
+                if let Some(image) = state.graphics.texture_cache.get_image(image_id) {
+                    commands.push(Command::DrawRect(DrawRect {
+                        pos: vec2(100.0, 400.0),
+                        size: image.rect.size().as_vec2(),
+                        fill: Fill::Image(FillImage {
+                            image: image_id,
+                            tint: Color::WHITE,
+                            clip_rect: None,
+                        }),
+                        corner_radii: CornerRadii::new_equal(16.0),
+                        border: None,
+                        shadow: None,
+                    }));
+                }
 
                 state
                     .graphics

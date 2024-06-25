@@ -73,7 +73,7 @@ impl Renderer for WgpuRenderer {
         self.context_mut().destroy_surface(id);
     }
 
-    fn update_textures(&mut self, commands: &[TextureCommand]) -> Result<()> {
+    fn update_textures(&mut self, commands: &mut Vec<TextureCommand>) -> Result<()> {
         self.context_mut().update_textures(commands);
         Ok(())
     }
@@ -258,7 +258,7 @@ impl RendererContext {
         self.textures.get_mut(&id).unwrap().mipmaps_dirty = true;
     }
 
-    fn texture_cmd_create_static(&mut self, id: TextureId, data: &ImageData) {
+    fn texture_cmd_create_static(&mut self, id: TextureId, mut data: ImageData) {
         let desc = TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -275,6 +275,8 @@ impl RendererContext {
                 | TextureUsages::COPY_DST,
             view_formats: &[],
         };
+
+        data.data.resize(data.data.len() * 4 / 3 + 1, 0);
 
         let texture = self.device.create_texture_with_data(
             &self.queue,
@@ -374,7 +376,7 @@ impl RendererContext {
         self.texture_mark_mipmaps_dirty(dst_id);
     }
 
-    fn texture_cmd_write(&mut self, dst_id: TextureId, dst_rect: URect, data: &ImageData) {
+    fn texture_cmd_write(&mut self, dst_id: TextureId, dst_rect: URect, data: ImageData) {
         let size = dst_rect.size();
         let texture = &self.textures[&dst_id].texture;
 
@@ -492,7 +494,7 @@ impl RendererContext {
         UVec2::new(config.width, config.height)
     }
 
-    fn update_textures(&mut self, commands: &[TextureCommand]) {
+    fn update_textures(&mut self, commands: &mut Vec<TextureCommand>) {
         if commands.is_empty() {
             return;
         }
@@ -500,17 +502,17 @@ impl RendererContext {
         let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.push_debug_group("ohm2d-textures");
 
-        for command in commands {
+        for command in commands.drain(..) {
             match command {
                 TextureCommand::CreateStatic { id, data } => {
-                    self.texture_cmd_create_static(*id, data);
+                    self.texture_cmd_create_static(id, data);
                 }
 
-                &TextureCommand::CreateDynamic { id, format, size } => {
+                TextureCommand::CreateDynamic { id, format, size } => {
                     self.texture_cmd_create_dynamic(id, format, size);
                 }
 
-                &TextureCommand::Copy {
+                TextureCommand::Copy {
                     src_id,
                     dst_id,
                     src_rect,
@@ -524,11 +526,11 @@ impl RendererContext {
                     dst_rect,
                     data,
                 } => {
-                    self.texture_cmd_write(*dst_id, *dst_rect, data);
+                    self.texture_cmd_write(dst_id, dst_rect, data);
                 }
 
                 TextureCommand::Free { id } => {
-                    self.textures.remove(id);
+                    self.textures.remove(&id);
                 }
             }
         }

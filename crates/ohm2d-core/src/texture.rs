@@ -180,6 +180,10 @@ impl TextureCache {
 
             if image_data.size.cmpge(Self::MIN_STANDALONE_SIZE).any() {
                 let texture_id = self.id_allocator.alloc();
+
+                image.texture = Some(texture_id);
+                image.rect = URect::new(UVec2::ZERO, image_data.size);
+
                 commands.push(TextureCommand::CreateStatic {
                     id: texture_id,
                     data: image_data,
