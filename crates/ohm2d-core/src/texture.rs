@@ -19,11 +19,13 @@ pub enum TextureCommand {
     CreateStatic {
         id: TextureId,
         data: ImageData,
+        mipmap_mode: MipmapMode,
     },
     CreateDynamic {
         id: TextureId,
         format: ImageFormat,
         size: UVec2,
+        mipmap_mode: MipmapMode,
     },
     Copy {
         src_id: TextureId,
@@ -39,6 +41,12 @@ pub enum TextureCommand {
     Free {
         id: TextureId,
     },
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum MipmapMode {
+    Disabled,
+    Enabled,
 }
 
 slotmap::new_key_type! {
@@ -166,6 +174,8 @@ impl TextureCache {
                 continue;
             }
 
+            let mipmap_mode = MipmapMode::Enabled;
+
             let source = self
                 .image_sources
                 .get_mut(image.path.scheme())
@@ -187,6 +197,7 @@ impl TextureCache {
                 commands.push(TextureCommand::CreateStatic {
                     id: texture_id,
                     data: image_data,
+                    mipmap_mode,
                 });
 
                 continue;
@@ -194,7 +205,7 @@ impl TextureCache {
 
             let (alloc_id, rect) = self
                 .atlases
-                .alloc(&mut self.id_allocator, commands, image_data)
+                .alloc(&mut self.id_allocator, commands, image_data, mipmap_mode)
                 .ok_or_else(|| Error::new(ErrorKind::AtlasAlloc, "failed to allocate image"))?;
 
             image.alloc_id = Some(alloc_id);
@@ -231,7 +242,12 @@ impl TextureCache {
 
             let (alloc_id, rect) = self
                 .atlases
-                .alloc(&mut self.id_allocator, commands, result.image)
+                .alloc(
+                    &mut self.id_allocator,
+                    commands,
+                    result.image,
+                    MipmapMode::Disabled,
+                )
                 .ok_or_else(|| Error::new(ErrorKind::AtlasAlloc, "failed to allocate glyph"))?;
 
             glyph.alloc_id = Some(alloc_id);
@@ -329,6 +345,7 @@ impl TextureAtlasPool {
         id_allocator: &mut TextureIdAllocator,
         commands: &mut Vec<TextureCommand>,
         data: ImageData,
+        mipmap_mode: MipmapMode,
     ) -> Option<((AtlasId, AllocId), URect)> {
         let alloc_size = data.size;
         let alloc_format = data.format;
@@ -336,6 +353,10 @@ impl TextureAtlasPool {
 
         for (atlas_id, atlas) in &mut self.atlases {
             if atlas.format != alloc_format {
+                continue;
+            }
+
+            if atlas.mipmap_mode != mipmap_mode {
                 continue;
             }
 
@@ -354,6 +375,7 @@ impl TextureAtlasPool {
             commands,
             alloc_format,
             UVec2::splat(new_atlas_size),
+            mipmap_mode,
         );
 
         let res = new_atlas.alloc(id_allocator, commands, alloc_size, &mut data);
@@ -384,6 +406,7 @@ struct TextureAtlas {
     format: ImageFormat,
     size: UVec2,
     allocator: AtlasAllocator,
+    mipmap_mode: MipmapMode,
 }
 
 impl TextureAtlas {
@@ -395,6 +418,7 @@ impl TextureAtlas {
         commands: &mut Vec<TextureCommand>,
         format: ImageFormat,
         size: UVec2,
+        mipmap_mode: MipmapMode,
     ) -> TextureAtlas {
         let texture = id_allocator.alloc();
 
@@ -402,6 +426,7 @@ impl TextureAtlas {
             id: texture,
             format,
             size,
+            mipmap_mode,
         });
 
         TextureAtlas {
@@ -409,6 +434,7 @@ impl TextureAtlas {
             format,
             size,
             allocator: AtlasAllocator::new(size2d(size)),
+            mipmap_mode,
         }
     }
 
@@ -439,6 +465,7 @@ impl TextureAtlas {
             id: dst_id,
             format: self.format,
             size: new_size,
+            mipmap_mode: self.mipmap_mode,
         });
 
         commands.push(TextureCommand::Copy {

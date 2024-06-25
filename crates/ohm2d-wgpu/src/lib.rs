@@ -8,8 +8,8 @@ use ohm2d_core::renderer::{
     WindowHandle,
 };
 use ohm2d_core::{
-    DrawList, Error, ErrorKind, ImageData, ImageFormat, Result, TextureCache, TextureCommand,
-    TextureId,
+    DrawList, Error, ErrorKind, ImageData, ImageFormat, MipmapMode, Result, TextureCache,
+    TextureCommand, TextureId,
 };
 use self_cell::self_cell;
 use slotmap::SlotMap;
@@ -258,7 +258,12 @@ impl RendererContext {
         self.textures.get_mut(&id).unwrap().mipmaps_dirty = true;
     }
 
-    fn texture_cmd_create_static(&mut self, id: TextureId, mut data: ImageData) {
+    fn texture_cmd_create_static(
+        &mut self,
+        id: TextureId,
+        mut data: ImageData,
+        mipmap_mode: MipmapMode,
+    ) {
         let desc = TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -266,7 +271,11 @@ impl RendererContext {
                 height: data.size.y,
                 depth_or_array_layers: 1,
             },
-            mip_level_count: mip_count(data.size),
+            mip_level_count: if mipmap_mode == MipmapMode::Enabled {
+                mip_count(data.size)
+            } else {
+                1
+            },
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: map_format(data.format),
@@ -276,7 +285,9 @@ impl RendererContext {
             view_formats: &[],
         };
 
-        data.data.resize(data.data.len() * 4 / 3 + 1, 0);
+        if mipmap_mode == MipmapMode::Enabled {
+            data.data.resize(data.data.len() * 4 / 3 + 1, 0);
+        }
 
         let texture = self.device.create_texture_with_data(
             &self.queue,
@@ -297,7 +308,13 @@ impl RendererContext {
         );
     }
 
-    fn texture_cmd_create_dynamic(&mut self, id: TextureId, format: ImageFormat, size: UVec2) {
+    fn texture_cmd_create_dynamic(
+        &mut self,
+        id: TextureId,
+        format: ImageFormat,
+        size: UVec2,
+        mipmap_mode: MipmapMode,
+    ) {
         let desc = TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -305,7 +322,7 @@ impl RendererContext {
                 height: size.y,
                 depth_or_array_layers: 1,
             },
-            mip_level_count: if format == ImageFormat::Srgba8 {
+            mip_level_count: if mipmap_mode == MipmapMode::Enabled {
                 mip_count(size)
             } else {
                 1
@@ -504,12 +521,21 @@ impl RendererContext {
 
         for command in commands.drain(..) {
             match command {
-                TextureCommand::CreateStatic { id, data } => {
-                    self.texture_cmd_create_static(id, data);
+                TextureCommand::CreateStatic {
+                    id,
+                    data,
+                    mipmap_mode,
+                } => {
+                    self.texture_cmd_create_static(id, data, mipmap_mode);
                 }
 
-                TextureCommand::CreateDynamic { id, format, size } => {
-                    self.texture_cmd_create_dynamic(id, format, size);
+                TextureCommand::CreateDynamic {
+                    id,
+                    format,
+                    size,
+                    mipmap_mode,
+                } => {
+                    self.texture_cmd_create_dynamic(id, format, size, mipmap_mode);
                 }
 
                 TextureCommand::Copy {
