@@ -3,7 +3,8 @@ use std::sync::Arc;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::math::UVec2;
-use crate::{DrawList, Result, TextureCache, TextureCommand};
+use crate::texture::{TextureCache, TextureCommand};
+use crate::{DrawList, Result};
 
 mod batcher;
 pub use self::batcher::*;

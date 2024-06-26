@@ -1,22 +1,19 @@
 pub mod math;
 pub mod renderer;
 
-mod asset;
+pub mod asset;
 mod color;
 mod corner_radii;
 mod error;
-mod image;
+pub mod image;
 pub mod text;
-mod texture;
+pub mod texture;
 
-pub use self::asset::*;
 pub use self::color::*;
 pub use self::corner_radii::*;
 pub use self::error::*;
-pub use self::image::*;
-pub use self::renderer::Renderer;
+use self::image::ImageId;
 use self::renderer::SurfaceId;
-pub use self::texture::*;
 use crate::math::{Affine2, URect, Vec2};
 use crate::text::FontId;
 

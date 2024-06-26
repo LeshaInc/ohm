@@ -1,6 +1,7 @@
+use ohm2d_core::image::{ImageData, ImageDecoder, ImageFormat};
 use ohm2d_core::math::{UVec2, Vec2};
 use ohm2d_core::text::{FontFace, RasterizedGlyph, Rasterizer, SubpixelBin};
-use ohm2d_core::{Error, ErrorKind, ImageData, ImageDecoder, ImageFormat, Result};
+use ohm2d_core::{Error, ErrorKind, Result};
 use ttf_parser::GlyphId;
 
 #[derive(Debug, Clone, Copy, Default)]

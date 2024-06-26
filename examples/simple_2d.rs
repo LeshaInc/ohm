@@ -1,14 +1,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ohm2d::asset::{AssetPath, FileAssetSource};
 use ohm2d::math::{vec2, Affine2, UVec2};
 use ohm2d::renderer::SurfaceId;
 use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
+use ohm2d::texture::MipmapMode;
 use ohm2d::{
-    Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, FileAssetSource,
-    Fill, Graphics, MipmapMode, Shadow,
+    Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, FillImage,
+    Graphics, Shadow,
 };
-use ohm2d_core::{AssetPath, FillImage};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;

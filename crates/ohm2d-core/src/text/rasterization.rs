@@ -1,8 +1,8 @@
 use std::fmt;
 
+use crate::image::ImageData;
 use crate::math::Vec2;
 use crate::text::{FontFace, FontId};
-use crate::ImageData;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct GlyphKey {

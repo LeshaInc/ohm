@@ -2,15 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 
+use ohm2d_core::image::{ImageData, ImageFormat};
 use ohm2d_core::math::{URect, UVec2, Vec2, Vec4};
 use ohm2d_core::renderer::{
     Batcher, BatcherScratch, Instance as BatcherInstance, Renderer, Source, SurfaceId, Vertex,
     WindowHandle,
 };
-use ohm2d_core::{
-    DrawList, Error, ErrorKind, ImageData, ImageFormat, MipmapMode, Result, TextureCache,
-    TextureCommand, TextureId,
-};
+use ohm2d_core::texture::{MipmapMode, TextureCache, TextureCommand, TextureId};
+use ohm2d_core::{DrawList, Error, ErrorKind, Result};
 use self_cell::self_cell;
 use slotmap::SlotMap;
 use wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};

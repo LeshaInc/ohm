@@ -4,12 +4,11 @@ use std::fmt;
 use guillotiere::{AllocId, AtlasAllocator};
 use slotmap::SlotMap;
 
+use crate::asset::{AssetPath, AssetSource};
+use crate::image::{ImageData, ImageDecoder, ImageFormat};
 use crate::math::{URect, UVec2, Vec2};
 use crate::text::{FontDatabase, GlyphKey, Rasterizer, SubpixelBin};
-use crate::{
-    AssetPath, AssetSource, Command, DrawList, Error, ErrorKind, ImageData, ImageDecoder,
-    ImageFormat, ImageId, Result,
-};
+use crate::{Command, DrawList, Error, ErrorKind, ImageId, Result};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub struct TextureId(pub u64);

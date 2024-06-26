@@ -3,12 +3,11 @@ use std::ops::Range;
 use glam::Affine2;
 
 use super::SurfaceId;
+use crate::image::ImageFormat;
 use crate::math::{Rect, UVec2, Vec2, Vec4};
 use crate::text::{GlyphKey, SubpixelBin};
-use crate::{
-    Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, ImageFormat,
-    TextureCache, TextureId,
-};
+use crate::texture::{TextureCache, TextureId};
+use crate::{Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill};
 
 pub const INSTANCE_FILL: u32 = 4294967295;
 pub const INSTANCE_FILL_GRAY: u32 = 4294967294;
