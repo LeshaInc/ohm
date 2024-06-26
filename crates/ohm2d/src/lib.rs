@@ -1,19 +1,24 @@
 pub use ohm2d_core::*;
 #[cfg(feature = "wgpu")]
 pub use ohm2d_wgpu::WgpuRenderer;
+use text::DefaultFontDatabase;
 
 pub mod text {
     pub use ohm2d_core::text::*;
+    use ohm2d_core::Result;
     #[cfg(feature = "fontdb")]
-    pub use ohm2d_fontdb::SystemFontSource;
+    pub use ohm2d_fontdb::SystemFontDatabase;
     #[cfg(feature = "rustybuzz")]
     pub use ohm2d_rustybuzz::RustybuzzShaper;
     #[cfg(feature = "zeno")]
     pub use ohm2d_zeno::ZenoRasterizer;
 
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     pub struct DefaultTextShaper {
+        #[cfg(feature = "rustybuzz")]
         inner: ohm2d_rustybuzz::RustybuzzShaper,
+        #[cfg(not(feature = "rustybuzz"))]
+        inner: DummyTextShaper,
     }
 
     impl DefaultTextShaper {
@@ -34,6 +39,38 @@ pub mod text {
             self.inner.shape(font_face, text, size, is_rtl, buf);
         }
     }
+
+    #[derive(Debug, Default)]
+    pub struct DefaultFontDatabase {
+        #[cfg(feature = "fontdb")]
+        inner: ohm2d_fontdb::SystemFontDatabase,
+        #[cfg(not(feature = "fontdb"))]
+        inner: DummyFontDatabase,
+    }
+
+    impl DefaultFontDatabase {
+        pub fn new() -> DefaultFontDatabase {
+            DefaultFontDatabase::default()
+        }
+    }
+
+    impl FontDatabase for DefaultFontDatabase {
+        fn query(&self, attrs: &FontAttrs) -> Option<FontId> {
+            self.inner.query(attrs)
+        }
+
+        fn load(&mut self, id: FontId) -> Result<&FontFace> {
+            self.inner.load(id)
+        }
+
+        fn get(&self, id: FontId) -> Option<&FontFace> {
+            self.inner.get(id)
+        }
+
+        fn get_or_load(&mut self, id: FontId) -> Result<&FontFace> {
+            self.inner.get_or_load(id)
+        }
+    }
 }
 
 use crate::text::{DefaultTextShaper, FontDatabase, FontRasterizers, TextShaper};
@@ -43,7 +80,7 @@ pub struct Graphics {
     pub asset_sources: AssetSources,
     pub image_decoders: ImageDecoders,
     pub texture_cache: TextureCache,
-    pub font_db: FontDatabase,
+    pub font_db: Box<dyn FontDatabase>,
     pub font_rasterizers: FontRasterizers,
     pub text_shaper: Box<dyn TextShaper>,
 }
@@ -62,7 +99,7 @@ impl Graphics {
             asset_sources: AssetSources::new(),
             image_decoders: ImageDecoders::new(),
             texture_cache: TextureCache::new(),
-            font_db: FontDatabase::new(),
+            font_db: Box::new(DefaultFontDatabase::new()),
             font_rasterizers: FontRasterizers::new(),
             text_shaper: Box::new(DefaultTextShaper::new()),
         };
@@ -76,10 +113,6 @@ impl Graphics {
         #[cfg(feature = "image")]
         self.image_decoders
             .add_decoder(ohm2d_image::ImageImageDecoder);
-
-        #[cfg(feature = "fontdb")]
-        self.font_db
-            .add_source(ohm2d_fontdb::SystemFontSource::new());
 
         #[cfg(feature = "image")]
         self.font_rasterizers
@@ -99,7 +132,7 @@ impl Graphics {
             let mut commands = Vec::new();
             self.texture_cache.add_glyphs_from_lists(draw_lists);
             self.texture_cache.load_glyphs(
-                &self.font_db,
+                &*self.font_db,
                 &mut self.font_rasterizers,
                 &mut commands,
             )?;

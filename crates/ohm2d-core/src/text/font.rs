@@ -8,17 +8,15 @@ use ttf_parser::{name_id, Face, Language, Tag};
 use crate::{Error, ErrorKind, Result};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub struct FontId {
-    pub source_id: usize,
-    pub opaque_id: u64,
-}
+#[repr(transparent)]
+pub struct FontId(pub u64);
 
 impl FontId {
-    pub const DUMMY: FontId = FontId {
-        source_id: usize::MAX,
-        opaque_id: u64::MAX,
-    };
+    pub const DUMMY: FontId = FontId(u64::MAX);
 }
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct InternalFontId(pub u64);
 
 self_cell::self_cell! {
     struct FaceRef {

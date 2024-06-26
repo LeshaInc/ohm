@@ -19,3 +19,19 @@ pub trait TextShaper: Send + Sync + 'static {
         buf: &mut Vec<ShapedGlyph>,
     );
 }
+
+#[derive(Debug, Copy, Clone, Default)]
+pub struct DummyTextShaper;
+
+impl TextShaper for DummyTextShaper {
+    fn shape(
+        &mut self,
+        _font_face: &FontFace,
+        _text: &str,
+        _size: f32,
+        _is_rtl: bool,
+        _buf: &mut Vec<ShapedGlyph>,
+    ) {
+        unimplemented!()
+    }
+}

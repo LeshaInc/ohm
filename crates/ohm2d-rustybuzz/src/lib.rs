@@ -1,4 +1,5 @@
 use std::collections::{hash_map, HashMap};
+use std::fmt;
 use std::sync::Arc;
 
 use ohm2d_core::math::IVec2;
@@ -82,5 +83,11 @@ impl TextShaper for RustybuzzShaper {
         }
 
         self.buffer = glyphs.clear();
+    }
+}
+
+impl fmt::Debug for RustybuzzShaper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RustybuzzShaper").finish_non_exhaustive()
     }
 }

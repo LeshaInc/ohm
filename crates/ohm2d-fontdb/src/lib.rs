@@ -1,46 +1,35 @@
-use ohm2d_core::text::{FontAttrs, FontFace, FontFamily, FontId, FontSource, FontStyle, FontWidth};
+use std::collections::HashMap;
+
+use ohm2d_core::text::{
+    FontAttrs, FontDatabase, FontFace, FontFamily, FontId, FontStyle, FontWidth,
+};
 use ohm2d_core::{Error, ErrorKind, Result};
 
-pub struct SystemFontSource(FontDbSource);
-
-impl SystemFontSource {
-    pub fn new() -> SystemFontSource {
-        let mut source = FontDbSource::default();
-        source.db.load_system_fonts();
-        SystemFontSource(source)
-    }
-}
-
-impl Default for SystemFontSource {
-    fn default() -> Self {
-        SystemFontSource::new()
-    }
-}
-
-impl FontSource for SystemFontSource {
-    fn query(&self, attrs: &FontAttrs) -> Option<u64> {
-        self.0.query(attrs)
-    }
-
-    fn load(&mut self, id: FontId) -> Result<FontFace> {
-        self.0.load(id)
-    }
-}
-
-struct FontDbSource {
+#[derive(Debug)]
+pub struct SystemFontDatabase {
     db: fontdb::Database,
+    loaded_faces: HashMap<FontId, FontFace>,
 }
 
-impl Default for FontDbSource {
-    fn default() -> Self {
-        FontDbSource {
-            db: fontdb::Database::new(),
+impl SystemFontDatabase {
+    pub fn new() -> SystemFontDatabase {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        SystemFontDatabase {
+            db,
+            loaded_faces: HashMap::new(),
         }
     }
 }
 
-impl FontSource for FontDbSource {
-    fn query(&self, attrs: &FontAttrs) -> Option<u64> {
+impl Default for SystemFontDatabase {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FontDatabase for SystemFontDatabase {
+    fn query(&self, attrs: &FontAttrs) -> Option<FontId> {
         self.db
             .query(&fontdb::Query {
                 families: &[fontdb_family(&attrs.family)],
@@ -51,14 +40,28 @@ impl FontSource for FontDbSource {
             .map(fontdb_id_to_u64)
     }
 
-    fn load(&mut self, id: FontId) -> Result<FontFace> {
+    fn load(&mut self, id: FontId) -> Result<&FontFace> {
         let (data, face_index) = unsafe {
             self.db
-                .make_shared_face_data(fontdb_id_from_u64(id.opaque_id))
+                .make_shared_face_data(fontdb_id_from_u64(id))
                 .ok_or_else(|| Error::new(ErrorKind::InvalidFont, "Failed to load font"))?
         };
 
-        FontFace::new(id, data, face_index)
+        let face = FontFace::new(id, data, face_index)?;
+        self.loaded_faces.insert(id, face);
+        Ok(&self.loaded_faces[&id])
+    }
+
+    fn get(&self, id: FontId) -> Option<&FontFace> {
+        self.loaded_faces.get(&id)
+    }
+
+    fn get_or_load(&mut self, id: FontId) -> Result<&FontFace> {
+        if self.loaded_faces.contains_key(&id) {
+            Ok(&self.loaded_faces[&id])
+        } else {
+            self.load(id)
+        }
     }
 }
 
@@ -95,10 +98,10 @@ fn fontdb_style(style: FontStyle) -> fontdb::Style {
     }
 }
 
-fn fontdb_id_to_u64(id: fontdb::ID) -> u64 {
+fn fontdb_id_to_u64(id: fontdb::ID) -> FontId {
     unsafe { std::mem::transmute(id) }
 }
 
-fn fontdb_id_from_u64(id: u64) -> fontdb::ID {
+fn fontdb_id_from_u64(id: FontId) -> fontdb::ID {
     unsafe { std::mem::transmute(id) }
 }

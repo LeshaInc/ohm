@@ -111,7 +111,7 @@ impl TextBuffer {
         self.dirty = true;
     }
 
-    pub fn compute_layout(&mut self, font_db: &mut FontDatabase, shaper: &mut dyn TextShaper) {
+    pub fn compute_layout(&mut self, font_db: &mut dyn FontDatabase, shaper: &mut dyn TextShaper) {
         if !self.dirty {
             return;
         }
@@ -192,7 +192,7 @@ impl TextBuffer {
     }
 
     fn get_section_font<'a>(
-        font_db: &'a mut FontDatabase,
+        font_db: &'a mut dyn FontDatabase,
         section: &mut Section,
         index: usize,
     ) -> Option<&'a FontFace> {
@@ -219,7 +219,7 @@ impl TextBuffer {
         }
     }
 
-    fn shape_runs(&mut self, font_db: &mut FontDatabase, shaper: &mut dyn TextShaper) {
+    fn shape_runs(&mut self, font_db: &mut dyn FontDatabase, shaper: &mut dyn TextShaper) {
         let mut run_idx = 0;
         'outer: while run_idx < self.runs.len() {
             let run = self.runs[run_idx].clone();

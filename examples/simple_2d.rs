@@ -142,7 +142,7 @@ impl ApplicationHandler for App {
 
                 state.buffer.set_max_width(size.x - 100.0);
                 state.buffer.compute_layout(
-                    &mut state.graphics.font_db,
+                    &mut *state.graphics.font_db,
                     &mut *state.graphics.text_shaper,
                 );
 

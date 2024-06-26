@@ -233,7 +233,7 @@ impl TextureCache {
 
     pub fn load_glyphs(
         &mut self,
-        font_db: &FontDatabase,
+        font_db: &dyn FontDatabase,
         rasterizer: &mut dyn Rasterizer,
         commands: &mut Vec<TextureCommand>,
     ) -> Result<()> {
