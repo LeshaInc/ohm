@@ -74,7 +74,7 @@ pub enum Fill {
 pub struct FillImage {
     pub image: ImageId,
     pub tint: Color,
-    pub clip_rect: Option<URect>, // TODO
+    pub clip_rect: Option<URect>,
 }
 
 #[derive(Debug, Clone, Copy)]

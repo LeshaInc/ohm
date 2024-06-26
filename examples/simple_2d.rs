@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ohm::asset::{AssetPath, FileAssetSource};
-use ohm::math::{vec2, Affine2, UVec2};
+use ohm::math::{vec2, Affine2, URect, UVec2};
 use ohm::renderer::SurfaceId;
 use ohm::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm::texture::MipmapMode;
@@ -252,6 +252,22 @@ impl ApplicationHandler for App {
                         }),
                         corner_radii: CornerRadii::new_equal(16.0),
                         border: None,
+                        shadow: None,
+                    }));
+
+                    commands.push(Command::DrawRect(DrawRect {
+                        pos: vec2(800.0, 700.0),
+                        size: vec2(100.0, 100.0),
+                        fill: Fill::Image(FillImage {
+                            image: image_id,
+                            tint: Color::WHITE,
+                            clip_rect: Some(URect::new(UVec2::new(200, 200), UVec2::new(300, 300))),
+                        }),
+                        corner_radii: CornerRadii::new_equal(8.0),
+                        border: Some(Border {
+                            color: Color::BLACK,
+                            width: 1.0,
+                        }),
                         shadow: None,
                     }));
                 }

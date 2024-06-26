@@ -217,8 +217,17 @@ impl Batcher<'_> {
                 .texture_cache
                 .get_image(fill.image)
                 .map(|image| {
-                    let tex_min = image.rect.min.as_vec2() / image.texture_size.as_vec2();
-                    let tex_max = image.rect.max.as_vec2() / image.texture_size.as_vec2();
+                    let (tex_min, tex_max) = match fill.clip_rect {
+                        Some(clip) => (
+                            (image.rect.min + clip.min).min(image.rect.max),
+                            (image.rect.min + clip.max).min(image.rect.max),
+                        ),
+                        None => (image.rect.min, image.rect.max),
+                    };
+
+                    let tex_min = tex_min.as_vec2() / image.texture_size.as_vec2();
+                    let tex_max = tex_max.as_vec2() / image.texture_size.as_vec2();
+
                     (Source::Texture(image.texture), tex_min, tex_max)
                 })
                 .unwrap_or((Source::White, Vec2::ZERO, Vec2::ZERO)),
