@@ -1,10 +1,7 @@
 use std::fmt;
-use std::fs::File;
-use std::io::{BufReader, Read, Seek};
-use std::path::PathBuf;
 
 use crate::math::UVec2;
-use crate::{AssetPath, Error, ErrorKind, Result};
+use crate::{Error, ErrorKind, Result};
 
 slotmap::new_key_type! {
     pub struct ImageId;
@@ -32,64 +29,61 @@ pub enum ImageFormat {
     Gray8,
 }
 
-pub trait ImageSource: Send + Sync + 'static {
-    fn scheme(&self) -> &'static str;
+pub trait ImageDecoder: Send + Sync + 'static {
+    fn probe(&self, extension: Option<&str>, data: &[u8]) -> bool;
 
-    fn load(&mut self, path: AssetPath<'_>, size: Option<UVec2>) -> Result<ImageData>;
+    fn decode(
+        &self,
+        extension: Option<&str>,
+        data: &[u8],
+        requested_size: Option<UVec2>,
+    ) -> Result<ImageData>;
 }
 
-#[derive(Debug)]
-pub struct FileImageSource {
-    root: PathBuf,
+#[derive(Default)]
+pub struct ImageDecoders {
+    decoders: Vec<Box<dyn ImageDecoder>>,
 }
 
-impl FileImageSource {
-    pub fn new(root: impl Into<PathBuf>) -> FileImageSource {
-        FileImageSource { root: root.into() }
+impl ImageDecoders {
+    pub fn new() -> ImageDecoders {
+        Default::default()
+    }
+
+    pub fn add_decoder(&mut self, decoder: impl ImageDecoder) {
+        self.decoders.push(Box::new(decoder));
     }
 }
 
-impl ImageSource for FileImageSource {
-    fn scheme(&self) -> &'static str {
-        "file"
-    }
-
-    fn load(&mut self, asset_path: AssetPath<'_>, size: Option<UVec2>) -> Result<ImageData> {
-        let mut path = self.root.clone();
-        path.push(asset_path.path());
-
-        let file = File::open(&path)?;
-        let mut reader = BufReader::new(file);
-
-        let mut buf = [0; 256];
-        let _ = reader.read(&mut buf)?;
-
-        let format = image::guess_format(&buf)
-            .ok()
-            .or_else(|| {
-                path.extension()
-                    .and_then(image::ImageFormat::from_extension)
-            })
-            .ok_or_else(|| Error::new(ErrorKind::InvalidImage, "unrecognized image format"))?;
-
-        reader.seek(std::io::SeekFrom::Start(0))?;
-
-        let mut image = image::load(reader, format).map_err(|e| match e {
-            image::ImageError::IoError(e) => e.into(),
-            _ => Error::wrap(ErrorKind::InvalidImage, e),
-        })?;
-
-        if let Some(size) = size {
-            image = image.resize_exact(size.x, size.y, image::imageops::FilterType::Lanczos3);
+impl ImageDecoder for ImageDecoders {
+    fn probe(&self, extension: Option<&str>, data: &[u8]) -> bool {
+        for decoder in &self.decoders {
+            if decoder.probe(extension, data) {
+                return true;
+            }
         }
 
-        let rgba_image = image.to_rgba8();
-        let data = rgba_image.into_raw();
+        false
+    }
 
-        Ok(ImageData {
-            format: ImageFormat::Srgba8,
-            size: UVec2::new(image.width(), image.height()),
-            data,
-        })
+    fn decode(
+        &self,
+        extension: Option<&str>,
+        data: &[u8],
+        requested_size: Option<UVec2>,
+    ) -> Result<ImageData> {
+        for decoder in &self.decoders {
+            if decoder.probe(extension, data) {
+                return decoder.decode(extension, data, requested_size);
+            }
+        }
+
+        Err(Error::new(ErrorKind::InvalidImage, "unrecognized image"))
+    }
+}
+
+impl fmt::Debug for ImageDecoders {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ImageDecoders").finish_non_exhaustive()
     }
 }

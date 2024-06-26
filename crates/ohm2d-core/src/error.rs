@@ -14,6 +14,7 @@ pub enum ErrorKind {
     InvalidFont,
     InvalidId,
     InvalidImage,
+    InvalidPath,
     Io,
     UnknownSchema,
 }
@@ -48,6 +49,16 @@ impl Error {
         self
     }
 
+    pub fn with_context<T: Display>(self, context: T) -> Error {
+        Error {
+            repr: Box::new(Repr {
+                kind: self.repr.kind,
+                message: context.to_string(),
+                source: Some(Box::new(self)),
+            }),
+        }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         self.repr.kind
     }
@@ -63,14 +74,10 @@ impl Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.repr.source {
             Some(source) => {
-                write!(
-                    f,
-                    "{} ({:?}), caused by: {:?}",
-                    self.repr.message, self.repr.kind, source
-                )
+                write!(f, "{}, caused by: {:?}", self.repr.message, source)
             }
             None => {
-                write!(f, "{} ({:?})", self.repr.message, self.repr.kind)
+                write!(f, "{}", self.repr.message)
             }
         }
     }

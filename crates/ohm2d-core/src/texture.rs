@@ -7,8 +7,8 @@ use slotmap::SlotMap;
 use crate::math::{URect, UVec2, Vec2};
 use crate::text::{FontDatabase, GlyphKey, Rasterizer, SubpixelBin};
 use crate::{
-    AssetPath, Command, DrawList, Error, ErrorKind, ImageData, ImageFormat, ImageId, ImageSource,
-    Result,
+    AssetPath, AssetSource, Command, DrawList, Error, ErrorKind, ImageData, ImageDecoder,
+    ImageFormat, ImageId, Result,
 };
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
@@ -55,7 +55,6 @@ slotmap::new_key_type! {
 
 #[derive(Default)]
 pub struct TextureCache {
-    image_sources: HashMap<&'static str, Box<dyn ImageSource>>,
     images: SlotMap<ImageId, ImageEntry>,
     images_by_path: HashMap<AssetPath<'static>, ImageId>,
     glyphs: HashMap<GlyphKey, GlyphEntry>,
@@ -66,7 +65,9 @@ pub struct TextureCache {
 #[derive(Debug, Clone)]
 struct ImageEntry {
     used: bool,
-    path: AssetPath<'static>,
+    path: Option<AssetPath<'static>>,
+    data: Option<ImageData>,
+    mipmap_mode: MipmapMode,
     texture: Option<TextureId>,
     rect: URect,
     alloc_id: Option<(AtlasId, AllocId)>,
@@ -104,11 +105,19 @@ impl TextureCache {
         TextureCache::default()
     }
 
-    pub fn add_image_source<S: ImageSource>(&mut self, source: S) {
-        self.image_sources.insert(source.scheme(), Box::new(source));
+    pub fn add_image(&mut self, data: ImageData, mipmap_mode: MipmapMode) -> ImageId {
+        self.images.insert(ImageEntry {
+            used: true,
+            path: None,
+            data: Some(data),
+            mipmap_mode,
+            texture: None,
+            rect: URect::ZERO,
+            alloc_id: None,
+        })
     }
 
-    pub fn add_image(&mut self, path: AssetPath<'_>) -> ImageId {
+    pub fn add_image_by_path(&mut self, path: AssetPath<'_>, mipmap_mode: MipmapMode) -> ImageId {
         if let Some(&id) = self.images_by_path.get(&path) {
             self.images[id].used = true;
             return id;
@@ -118,13 +127,15 @@ impl TextureCache {
 
         let id = self.images.insert(ImageEntry {
             used: true,
-            path: path.clone(),
+            path: Some(path.clone()),
+            data: None,
+            mipmap_mode,
             texture: None,
             rect: URect::ZERO,
             alloc_id: None,
         });
 
-        self.images_by_path.insert(path.clone(), id);
+        self.images_by_path.insert(path, id);
 
         id
     }
@@ -139,27 +150,25 @@ impl TextureCache {
         });
     }
 
-    pub fn add_glyphs_from_lists(&mut self, draw_lists: &[DrawList]) {
-        let mut lists = Vec::with_capacity(draw_lists.len());
-
-        for draw_list in draw_lists {
-            lists.push(draw_list.commands);
+    pub fn add_glyphs_from_lists(&mut self, lists: &[DrawList]) {
+        for list in lists {
+            self.add_glyphs_from_commands(list.commands);
         }
+    }
 
-        while let Some(list) = lists.pop() {
-            for command in list {
-                match command {
-                    Command::DrawLayer(v) => lists.push(v.commands),
-                    Command::DrawGlyph(glyph) => {
-                        self.add_glyph(GlyphKey {
-                            font: glyph.font,
-                            glyph: glyph.glyph,
-                            size: glyph.size.to_bits(),
-                            subpixel_bin: SubpixelBin::new(glyph.pos),
-                        });
-                    }
-                    _ => (),
+    pub fn add_glyphs_from_commands(&mut self, commands: &[Command<'_>]) {
+        for command in commands {
+            match command {
+                Command::DrawLayer(layer) => self.add_glyphs_from_commands(layer.commands),
+                Command::DrawGlyph(glyph) => {
+                    self.add_glyph(GlyphKey {
+                        font: glyph.font,
+                        glyph: glyph.glyph,
+                        size: glyph.size.to_bits(),
+                        subpixel_bin: SubpixelBin::new(glyph.pos),
+                    });
                 }
+                _ => (),
             }
         }
     }
@@ -168,36 +177,41 @@ impl TextureCache {
         self.images[id].used = true;
     }
 
-    pub fn load_images(&mut self, commands: &mut Vec<TextureCommand>) -> Result<()> {
+    pub fn load_images(
+        &mut self,
+        source: &dyn AssetSource,
+        decoder: &dyn ImageDecoder,
+        commands: &mut Vec<TextureCommand>,
+    ) -> Result<()> {
         for image in self.images.values_mut() {
-            if image.texture.is_some() {
+            if image.texture.is_some() || image.alloc_id.is_some() {
                 continue;
             }
 
-            let mipmap_mode = MipmapMode::Enabled;
+            let data = if let Some(data) = image.data.take() {
+                data
+            } else if let Some(path) = image.path.as_ref() {
+                let raw_data = source
+                    .load(path.as_borrowed())
+                    .map_err(|e| e.with_context(format!("failed to load image from {path}")))?;
 
-            let source = self
-                .image_sources
-                .get_mut(image.path.scheme())
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::UnknownSchema,
-                        format!("no image source for scheme `{}`", image.path.scheme()),
-                    )
-                })?;
+                decoder
+                    .decode(path.extension(), &raw_data, None)
+                    .map_err(|e| e.with_context(format!("failed to decode image from {path}")))?
+            } else {
+                continue;
+            };
 
-            let image_data = source.load(image.path.as_borrowed(), None)?;
-
-            if image_data.size.cmpge(Self::MIN_STANDALONE_SIZE).any() {
+            if data.size.cmpge(Self::MIN_STANDALONE_SIZE).any() {
                 let texture_id = self.id_allocator.alloc();
 
                 image.texture = Some(texture_id);
-                image.rect = URect::new(UVec2::ZERO, image_data.size);
+                image.rect = URect::new(UVec2::ZERO, data.size);
 
                 commands.push(TextureCommand::CreateStatic {
                     id: texture_id,
-                    data: image_data,
-                    mipmap_mode,
+                    data,
+                    mipmap_mode: image.mipmap_mode,
                 });
 
                 continue;
@@ -205,8 +219,10 @@ impl TextureCache {
 
             let (alloc_id, rect) = self
                 .atlases
-                .alloc(&mut self.id_allocator, commands, image_data, mipmap_mode)
-                .ok_or_else(|| Error::new(ErrorKind::AtlasAlloc, "failed to allocate image"))?;
+                .alloc(&mut self.id_allocator, commands, data, image.mipmap_mode)
+                .ok_or_else(|| {
+                    Error::new(ErrorKind::AtlasAlloc, "failed to allocate image in atlas")
+                })?;
 
             image.alloc_id = Some(alloc_id);
             image.rect = rect;
@@ -248,7 +264,9 @@ impl TextureCache {
                     result.image,
                     MipmapMode::Disabled,
                 )
-                .ok_or_else(|| Error::new(ErrorKind::AtlasAlloc, "failed to allocate glyph"))?;
+                .ok_or_else(|| {
+                    Error::new(ErrorKind::AtlasAlloc, "failed to allocate glyph in atlas")
+                })?;
 
             glyph.alloc_id = Some(alloc_id);
             glyph.rect = rect;
@@ -301,7 +319,9 @@ impl TextureCache {
                 commands.push(TextureCommand::Free { id });
             }
 
-            self.images_by_path.remove(&image.path);
+            if let Some(path) = &image.path {
+                self.images_by_path.remove(path);
+            }
 
             false
         });

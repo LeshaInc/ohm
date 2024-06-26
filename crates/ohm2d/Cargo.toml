@@ -8,19 +8,32 @@ ohm2d-core.workspace = true
 
 ohm2d-fontdb = { workspace = true, optional = true }
 ohm2d-freetype = { workspace = true, optional = true }
+ohm2d-image = { workspace = true, optional = true }
 ohm2d-rustybuzz = { workspace = true, optional = true }
 ohm2d-wgpu = { workspace = true, optional = true }
 ohm2d-zeno = { workspace = true, optional = true }
+
+image = { version = "*", optional = true }
 
 [dev-dependencies]
 glam.workspace = true
 winit.workspace = true
 
 [features]
-default = ["fontdb", "freetype", "rustybuzz", "wgpu", "zeno"]
+default = [
+  "fontdb",
+  "freetype",
+  "image",
+  "image/jpeg",
+  "image/png",
+  "rustybuzz",
+  "wgpu",
+  "zeno"
+]
 
 fontdb = ["dep:ohm2d-fontdb"]
 freetype = ["dep:ohm2d-freetype"]
+image = ["dep:ohm2d-image", "dep:image"]
 rustybuzz = ["dep:ohm2d-rustybuzz"]
 wgpu = ["dep:ohm2d-wgpu"]
 zeno = ["dep:ohm2d-zeno"]

@@ -1,0 +1,10 @@
+[package]
+name = "ohm2d-image"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ohm2d-core.workspace = true
+
+image.workspace = true
+ttf-parser.workspace = true

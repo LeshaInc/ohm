@@ -5,10 +5,10 @@ use ohm2d::math::{vec2, Affine2, UVec2};
 use ohm2d::renderer::SurfaceId;
 use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm2d::{
-    Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, Graphics,
-    Shadow,
+    Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, FileAssetSource,
+    Fill, Graphics, MipmapMode, Shadow,
 };
-use ohm2d_core::{AssetPath, FileImageSource, FillImage};
+use ohm2d_core::{AssetPath, FillImage};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
@@ -43,8 +43,8 @@ impl ApplicationHandler for App {
         let mut path = PathBuf::from(file!());
         path.pop();
         graphics
-            .texture_cache
-            .add_image_source(FileImageSource::new(path));
+            .asset_sources
+            .add_source("file", FileAssetSource::new(path).unwrap());
 
         let surface = graphics
             .renderer
@@ -238,7 +238,7 @@ impl ApplicationHandler for App {
                 let image_id = state
                     .graphics
                     .texture_cache
-                    .add_image(AssetPath::new("file:kitten.jpg"));
+                    .add_image_by_path(AssetPath::new("file:kitten.jpg"), MipmapMode::Enabled);
 
                 if let Some(image) = state.graphics.texture_cache.get_image(image_id) {
                     commands.push(Command::DrawRect(DrawRect {

@@ -10,6 +10,7 @@ ohm2d = { path = "crates/ohm2d", version = "0.1.0" }
 ohm2d-core = { path = "crates/ohm2d-core", version = "0.1.0" }
 ohm2d-fontdb = { path = "crates/ohm2d-fontdb", version = "0.1.0" }
 ohm2d-freetype = { path = "crates/ohm2d-freetype", version = "0.1.0" }
+ohm2d-image = { path = "crates/ohm2d-image", version = "0.1.0" }
 ohm2d-rustybuzz = { path = "crates/ohm2d-rustybuzz", version = "0.1.0" }
 ohm2d-wgpu = { path = "crates/ohm2d-wgpu", version = "0.1.0" }
 ohm2d-zeno = { path = "crates/ohm2d-zeno", version = "0.1.0" }
@@ -19,7 +20,7 @@ fontdb = "0.18.0"
 freetype-rs = "0.37.0"
 glam = "0.28.0"
 guillotiere = "0.6.2"
-image = { version = "0.25.1", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25.1", default-features = false }
 log = "0.4.21"
 pollster = "0.3.0"
 raw-window-handle = "0.6.2"

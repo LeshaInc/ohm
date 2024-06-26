@@ -36,12 +36,12 @@ pub mod text {
     }
 }
 
-use crate::text::{
-    DefaultTextShaper, EmbeddedImageRasterizer, FontDatabase, FontRasterizers, TextShaper,
-};
+use crate::text::{DefaultTextShaper, FontDatabase, FontRasterizers, TextShaper};
 
 pub struct Graphics {
     pub renderer: Box<dyn Renderer>,
+    pub asset_sources: AssetSources,
+    pub image_decoders: ImageDecoders,
     pub texture_cache: TextureCache,
     pub font_db: FontDatabase,
     pub font_rasterizers: FontRasterizers,
@@ -59,6 +59,8 @@ impl Graphics {
     pub fn new<R: Renderer>(renderer: R) -> Graphics {
         let mut graphics = Graphics {
             renderer: Box::new(renderer),
+            asset_sources: AssetSources::new(),
+            image_decoders: ImageDecoders::new(),
             texture_cache: TextureCache::new(),
             font_db: FontDatabase::new(),
             font_rasterizers: FontRasterizers::new(),
@@ -71,17 +73,25 @@ impl Graphics {
     }
 
     fn default_init(&mut self) {
+        #[cfg(feature = "image")]
+        self.image_decoders
+            .add_decoder(ohm2d_image::ImageImageDecoder);
+
         #[cfg(feature = "fontdb")]
         self.font_db
             .add_source(ohm2d_fontdb::SystemFontSource::new());
-        self.font_rasterizers.add(EmbeddedImageRasterizer);
+
+        #[cfg(feature = "image")]
+        self.font_rasterizers
+            .add_rasterizer(ohm2d_image::EmbeddedImageRasterizer);
 
         #[cfg(feature = "freetype")]
         self.font_rasterizers
-            .add(ohm2d_freetype::FreetypeRasterizer::new());
+            .add_rasterizer(ohm2d_freetype::FreetypeRasterizer::new());
 
         #[cfg(feature = "zeno")]
-        self.font_rasterizers.add(ohm2d_zeno::ZenoRasterizer::new());
+        self.font_rasterizers
+            .add_rasterizer(ohm2d_zeno::ZenoRasterizer::new());
     }
 
     pub fn render(&mut self, draw_lists: &[DrawList]) -> Result<()> {
@@ -93,7 +103,11 @@ impl Graphics {
                 &mut self.font_rasterizers,
                 &mut commands,
             )?;
-            self.texture_cache.load_images(&mut commands)?;
+            self.texture_cache.load_images(
+                &self.asset_sources,
+                &self.image_decoders,
+                &mut commands,
+            )?;
             self.renderer.update_textures(&mut commands)?;
         }
 
