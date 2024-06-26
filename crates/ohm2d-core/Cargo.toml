@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 glam.workspace = true
 guillotiere.workspace = true
-log.workspace = true
 raw-window-handle.workspace = true
 self_cell.workspace = true
 slotmap.workspace = true

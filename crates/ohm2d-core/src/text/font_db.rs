@@ -52,7 +52,6 @@ impl FontDatabase {
         let face = match source.load(id) {
             Ok(v) => v,
             Err(e) => {
-                log::error!("Font failed to load: {}", e);
                 self.cached_failures.insert(id);
                 return Err(e);
             }
