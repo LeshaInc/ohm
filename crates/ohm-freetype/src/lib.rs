@@ -7,7 +7,7 @@ use freetype::face::LoadFlag;
 use freetype::{Face, Library, Matrix, Vector};
 use ohm_core::image::{ImageData, ImageFormat};
 use ohm_core::math::{UVec2, Vec2};
-use ohm_core::text::{FontFace, FontId, RasterizedGlyph, Rasterizer, SubpixelBin};
+use ohm_core::text::{FontFace, FontId, GlyphId, RasterizedGlyph, Rasterizer, SubpixelBin};
 
 struct FaceBuffer(Arc<dyn AsRef<[u8]> + Send + Sync + 'static>);
 
@@ -35,7 +35,7 @@ impl Rasterizer for FreetypeRasterizer {
     fn rasterize(
         &mut self,
         font_face: &FontFace,
-        glyph_id: u16,
+        glyph_id: GlyphId,
         size: f32,
         subpixel_bin: SubpixelBin,
     ) -> Option<RasterizedGlyph> {
@@ -71,7 +71,7 @@ impl Rasterizer for FreetypeRasterizer {
         };
 
         face.set_transform(&mut matrix, &mut delta);
-        face.load_glyph(glyph_id as u32, LoadFlag::RENDER).ok()?;
+        face.load_glyph(glyph_id.0 as u32, LoadFlag::RENDER).ok()?;
 
         let glyph = face.glyph();
         let bitmap = glyph.bitmap();

@@ -1,8 +1,7 @@
 use ohm_core::image::{ImageData, ImageDecoder, ImageFormat};
 use ohm_core::math::{UVec2, Vec2};
-use ohm_core::text::{FontFace, RasterizedGlyph, Rasterizer, SubpixelBin};
+use ohm_core::text::{FontFace, GlyphId, RasterizedGlyph, Rasterizer, SubpixelBin};
 use ohm_core::{Error, ErrorKind, Result};
-use ttf_parser::GlyphId;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ImageImageDecoder;
@@ -56,17 +55,16 @@ impl Rasterizer for EmbeddedImageRasterizer {
     fn rasterize(
         &mut self,
         font_face: &FontFace,
-        glyph_id: u16,
+        glyph_id: GlyphId,
         size: f32,
         _subpixel_bin: SubpixelBin,
     ) -> Option<RasterizedGlyph> {
         let face = font_face.ttfp_face();
 
-        let raster =
-            match face.glyph_raster_image(GlyphId(glyph_id), size.min(u16::MAX.into()) as u16) {
-                Some(v) => v,
-                None => return None,
-            };
+        let raster = match face.glyph_raster_image(glyph_id, size.min(u16::MAX.into()) as u16) {
+            Some(v) => v,
+            None => return None,
+        };
 
         let scale = size / (raster.pixels_per_em as f32);
 

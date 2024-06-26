@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use ohm_core::math::IVec2;
-use ohm_core::text::{FontFace, FontId, ShapedGlyph, TextShaper};
+use ohm_core::text::{FontFace, FontId, GlyphId, ShapedGlyph, TextShaper};
 use rustybuzz::{Direction, Face, UnicodeBuffer};
 
 self_cell::self_cell! {
@@ -70,7 +70,7 @@ impl TextShaper for RustybuzzShaper {
 
         let it = glyphs.glyph_infos().iter().zip(glyphs.glyph_positions());
         buf.extend(it.map(|(info, pos)| ShapedGlyph {
-            glyph_id: info.glyph_id as u16,
+            glyph_id: GlyphId(info.glyph_id as u16),
             x_advance: (pos.x_advance as f32) * scale,
             offset: IVec2::new(pos.x_offset, -pos.y_offset).as_vec2() * scale,
             cluster: info.cluster as usize,

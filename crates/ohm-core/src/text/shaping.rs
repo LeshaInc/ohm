@@ -1,9 +1,9 @@
 use crate::math::Vec2;
-use crate::text::FontFace;
+use crate::text::{FontFace, GlyphId};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShapedGlyph {
-    pub glyph_id: u16,
+    pub glyph_id: GlyphId,
     pub cluster: usize,
     pub x_advance: f32,
     pub offset: Vec2,

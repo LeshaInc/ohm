@@ -3,6 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use smallvec::{smallvec, SmallVec};
+pub use ttf_parser::GlyphId;
 use ttf_parser::{name_id, Face, Language, Tag};
 
 use crate::{Error, ErrorKind, Result};

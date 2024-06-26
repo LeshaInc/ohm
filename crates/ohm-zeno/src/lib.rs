@@ -1,6 +1,6 @@
 use ohm_core::image::{ImageData, ImageFormat};
 use ohm_core::math::{IVec2, UVec2};
-use ohm_core::text::{FontFace, RasterizedGlyph, Rasterizer, SubpixelBin};
+use ohm_core::text::{FontFace, GlyphId, RasterizedGlyph, Rasterizer, SubpixelBin};
 use zeno::{Command, Format, Mask, PathBuilder, Scratch, Transform};
 
 #[derive(Default)]
@@ -19,14 +19,14 @@ impl Rasterizer for ZenoRasterizer {
     fn rasterize(
         &mut self,
         font_face: &FontFace,
-        glyph_id: u16,
+        glyph_id: GlyphId,
         size: f32,
         subpixel_bin: SubpixelBin,
     ) -> Option<RasterizedGlyph> {
         self.command_buffer.clear();
 
         font_face.ttfp_face().outline_glyph(
-            ttf_parser::GlyphId(glyph_id),
+            glyph_id,
             &mut Outliner {
                 buf: &mut self.command_buffer,
             },

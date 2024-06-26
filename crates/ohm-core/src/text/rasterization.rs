@@ -2,12 +2,12 @@ use std::fmt;
 
 use crate::image::ImageData;
 use crate::math::Vec2;
-use crate::text::{FontFace, FontId};
+use crate::text::{FontFace, FontId, GlyphId};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct GlyphKey {
     pub font: FontId,
-    pub glyph: u16,
+    pub glyph: GlyphId,
     pub size: u32,
     pub subpixel_bin: SubpixelBin,
 }
@@ -42,7 +42,7 @@ pub trait Rasterizer {
     fn rasterize(
         &mut self,
         font_face: &FontFace,
-        glyph_id: u16,
+        glyph_id: GlyphId,
         size: f32,
         subpixel_bin: SubpixelBin,
     ) -> Option<RasterizedGlyph>;
@@ -67,7 +67,7 @@ impl Rasterizer for FontRasterizers {
     fn rasterize(
         &mut self,
         font_face: &FontFace,
-        glyph_id: u16,
+        glyph_id: GlyphId,
         size: f32,
         subpixel_bin: SubpixelBin,
     ) -> Option<RasterizedGlyph> {

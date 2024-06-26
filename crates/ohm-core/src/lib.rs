@@ -15,7 +15,7 @@ pub use self::error::*;
 use self::image::ImageId;
 use self::renderer::SurfaceId;
 use crate::math::{Affine2, URect, Vec2};
-use crate::text::FontId;
+use crate::text::{FontId, GlyphId};
 
 #[derive(Debug, Clone, Copy)]
 pub struct DrawList<'a> {
@@ -45,7 +45,7 @@ pub struct DrawGlyph {
     pub pos: Vec2,
     pub size: f32,
     pub font: FontId,
-    pub glyph: u16,
+    pub glyph: GlyphId,
     pub color: Color,
 }
 

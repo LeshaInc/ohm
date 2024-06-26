@@ -256,7 +256,7 @@ impl TextBuffer {
 
                 let is_missing = |glyph: &ShapedGlyph| {
                     // ignore missing whitespace glyphs
-                    glyph.glyph_id == 0
+                    glyph.glyph_id.0 == 0
                         && !self.text[glyph.cluster..]
                             .chars()
                             .next()
@@ -304,7 +304,7 @@ impl TextBuffer {
                             cluster = Some(glyph.cluster);
                         }
 
-                        if glyph.glyph_id == 0 {
+                        if glyph.glyph_id.0 == 0 {
                             is_missing = true;
                         }
 
