@@ -44,19 +44,19 @@ impl Graphics {
     fn default_init(&mut self) {
         #[cfg(feature = "image")]
         self.image_decoders
-            .add_decoder(ohm2d_image::ImageImageDecoder);
+            .add_decoder(ohm_image::ImageImageDecoder);
 
         #[cfg(feature = "image")]
         self.font_rasterizers
-            .add_rasterizer(ohm2d_image::EmbeddedImageRasterizer);
+            .add_rasterizer(ohm_image::EmbeddedImageRasterizer);
 
         #[cfg(feature = "freetype")]
         self.font_rasterizers
-            .add_rasterizer(ohm2d_freetype::FreetypeRasterizer::new());
+            .add_rasterizer(ohm_freetype::FreetypeRasterizer::new());
 
         #[cfg(feature = "zeno")]
         self.font_rasterizers
-            .add_rasterizer(ohm2d_zeno::ZenoRasterizer::new());
+            .add_rasterizer(ohm_zeno::ZenoRasterizer::new());
     }
 
     pub fn render(&mut self, draw_lists: &[DrawList]) -> Result<()> {

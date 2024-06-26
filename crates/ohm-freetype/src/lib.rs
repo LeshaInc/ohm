@@ -5,9 +5,9 @@ use std::sync::Arc;
 use freetype::bitmap::PixelMode;
 use freetype::face::LoadFlag;
 use freetype::{Face, Library, Matrix, Vector};
-use ohm2d_core::image::{ImageData, ImageFormat};
-use ohm2d_core::math::{UVec2, Vec2};
-use ohm2d_core::text::{FontFace, FontId, RasterizedGlyph, Rasterizer, SubpixelBin};
+use ohm_core::image::{ImageData, ImageFormat};
+use ohm_core::math::{UVec2, Vec2};
+use ohm_core::text::{FontFace, FontId, RasterizedGlyph, Rasterizer, SubpixelBin};
 
 struct FaceBuffer(Arc<dyn AsRef<[u8]> + Send + Sync + 'static>);
 

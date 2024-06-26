@@ -1,10 +1,10 @@
 [package]
-name = "ohm2d-image"
+name = "ohm-zeno"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ohm2d-core.workspace = true
+ohm-core.workspace = true
 
-image.workspace = true
 ttf-parser.workspace = true
+zeno.workspace = true

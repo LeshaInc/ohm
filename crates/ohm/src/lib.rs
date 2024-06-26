@@ -1,19 +1,19 @@
-pub use ohm2d_core::*;
+pub use ohm_core::*;
 
 pub mod text {
-    pub use ohm2d_core::text::*;
-    use ohm2d_core::Result;
+    pub use ohm_core::text::*;
+    use ohm_core::Result;
     #[cfg(feature = "fontdb")]
-    pub use ohm2d_fontdb::SystemFontDatabase;
+    pub use ohm_fontdb::SystemFontDatabase;
     #[cfg(feature = "rustybuzz")]
-    pub use ohm2d_rustybuzz::RustybuzzShaper;
+    pub use ohm_rustybuzz::RustybuzzShaper;
     #[cfg(feature = "zeno")]
-    pub use ohm2d_zeno::ZenoRasterizer;
+    pub use ohm_zeno::ZenoRasterizer;
 
     #[derive(Debug, Default)]
     pub struct DefaultTextShaper {
         #[cfg(feature = "rustybuzz")]
-        inner: ohm2d_rustybuzz::RustybuzzShaper,
+        inner: ohm_rustybuzz::RustybuzzShaper,
         #[cfg(not(feature = "rustybuzz"))]
         inner: DummyTextShaper,
     }
@@ -40,7 +40,7 @@ pub mod text {
     #[derive(Debug, Default)]
     pub struct DefaultFontDatabase {
         #[cfg(feature = "fontdb")]
-        inner: ohm2d_fontdb::SystemFontDatabase,
+        inner: ohm_fontdb::SystemFontDatabase,
         #[cfg(not(feature = "fontdb"))]
         inner: DummyFontDatabase,
     }
@@ -71,9 +71,9 @@ pub mod text {
 }
 
 pub mod renderer {
-    pub use ohm2d_core::renderer::*;
+    pub use ohm_core::renderer::*;
     #[cfg(feature = "wgpu")]
-    pub use ohm2d_wgpu::WgpuRenderer;
+    pub use ohm_wgpu::WgpuRenderer;
 }
 
 mod graphics;

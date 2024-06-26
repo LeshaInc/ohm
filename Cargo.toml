@@ -6,14 +6,14 @@ members = [
 ]
 
 [workspace.dependencies]
-ohm2d = { path = "crates/ohm2d", version = "0.1.0" }
-ohm2d-core = { path = "crates/ohm2d-core", version = "0.1.0" }
-ohm2d-fontdb = { path = "crates/ohm2d-fontdb", version = "0.1.0" }
-ohm2d-freetype = { path = "crates/ohm2d-freetype", version = "0.1.0" }
-ohm2d-image = { path = "crates/ohm2d-image", version = "0.1.0" }
-ohm2d-rustybuzz = { path = "crates/ohm2d-rustybuzz", version = "0.1.0" }
-ohm2d-wgpu = { path = "crates/ohm2d-wgpu", version = "0.1.0" }
-ohm2d-zeno = { path = "crates/ohm2d-zeno", version = "0.1.0" }
+ohm = { path = "crates/ohm", version = "0.1.0" }
+ohm-core = { path = "crates/ohm-core", version = "0.1.0" }
+ohm-fontdb = { path = "crates/ohm-fontdb", version = "0.1.0" }
+ohm-freetype = { path = "crates/ohm-freetype", version = "0.1.0" }
+ohm-image = { path = "crates/ohm-image", version = "0.1.0" }
+ohm-rustybuzz = { path = "crates/ohm-rustybuzz", version = "0.1.0" }
+ohm-wgpu = { path = "crates/ohm-wgpu", version = "0.1.0" }
+ohm-zeno = { path = "crates/ohm-zeno", version = "0.1.0" }
 
 encase = { version = "0.9.0", features = ["glam"] }
 fontdb = "0.18.0"

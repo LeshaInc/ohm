@@ -1,0 +1,43 @@
+[package]
+name = "ohm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ohm-core.workspace = true
+
+ohm-fontdb = { workspace = true, optional = true }
+ohm-freetype = { workspace = true, optional = true }
+ohm-image = { workspace = true, optional = true }
+ohm-rustybuzz = { workspace = true, optional = true }
+ohm-wgpu = { workspace = true, optional = true }
+ohm-zeno = { workspace = true, optional = true }
+
+image = { version = "*", optional = true }
+
+[dev-dependencies]
+glam.workspace = true
+winit.workspace = true
+
+[features]
+default = [
+  "fontdb",
+  "freetype",
+  "image",
+  "image/jpeg",
+  "image/png",
+  "rustybuzz",
+  "wgpu",
+  "zeno"
+]
+
+fontdb = ["dep:ohm-fontdb"]
+freetype = ["dep:ohm-freetype"]
+image = ["dep:ohm-image", "dep:image"]
+rustybuzz = ["dep:ohm-rustybuzz"]
+wgpu = ["dep:ohm-wgpu"]
+zeno = ["dep:ohm-zeno"]
+
+[[example]]
+name = "simple_2d"
+path = "../../examples/simple_2d.rs"

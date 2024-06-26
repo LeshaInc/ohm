@@ -1,6 +1,6 @@
-use ohm2d_core::image::{ImageData, ImageFormat};
-use ohm2d_core::math::{IVec2, UVec2};
-use ohm2d_core::text::{FontFace, RasterizedGlyph, Rasterizer, SubpixelBin};
+use ohm_core::image::{ImageData, ImageFormat};
+use ohm_core::math::{IVec2, UVec2};
+use ohm_core::text::{FontFace, RasterizedGlyph, Rasterizer, SubpixelBin};
 use zeno::{Command, Format, Mask, PathBuilder, Scratch, Transform};
 
 #[derive(Default)]

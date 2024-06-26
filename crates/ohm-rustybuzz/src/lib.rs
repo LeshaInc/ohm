@@ -2,8 +2,8 @@ use std::collections::{hash_map, HashMap};
 use std::fmt;
 use std::sync::Arc;
 
-use ohm2d_core::math::IVec2;
-use ohm2d_core::text::{FontFace, FontId, ShapedGlyph, TextShaper};
+use ohm_core::math::IVec2;
+use ohm_core::text::{FontFace, FontId, ShapedGlyph, TextShaper};
 use rustybuzz::{Direction, Face, UnicodeBuffer};
 
 self_cell::self_cell! {

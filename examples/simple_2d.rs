@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ohm2d::asset::{AssetPath, FileAssetSource};
-use ohm2d::math::{vec2, Affine2, UVec2};
-use ohm2d::renderer::SurfaceId;
-use ohm2d::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
-use ohm2d::texture::MipmapMode;
-use ohm2d::{
+use ohm::asset::{AssetPath, FileAssetSource};
+use ohm::math::{vec2, Affine2, UVec2};
+use ohm::renderer::SurfaceId;
+use ohm::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
+use ohm::texture::MipmapMode;
+use ohm::{
     Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, FillImage,
     Graphics, Shadow,
 };
@@ -33,7 +33,7 @@ impl ApplicationHandler for App {
         let window = event_loop
             .create_window(
                 WindowAttributes::default()
-                    .with_title("ohm2d example")
+                    .with_title("ohm example")
                     .with_inner_size(PhysicalSize::new(800, 600)),
             )
             .map(Arc::new)

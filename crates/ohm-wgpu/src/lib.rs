@@ -2,14 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 
-use ohm2d_core::image::{ImageData, ImageFormat};
-use ohm2d_core::math::{URect, UVec2, Vec2, Vec4};
-use ohm2d_core::renderer::{
+use ohm_core::image::{ImageData, ImageFormat};
+use ohm_core::math::{URect, UVec2, Vec2, Vec4};
+use ohm_core::renderer::{
     Batcher, BatcherScratch, Instance as BatcherInstance, Renderer, Source, SurfaceId, Vertex,
     WindowHandle,
 };
-use ohm2d_core::texture::{MipmapMode, TextureCache, TextureCommand, TextureId};
-use ohm2d_core::{DrawList, Error, ErrorKind, Result};
+use ohm_core::texture::{MipmapMode, TextureCache, TextureCommand, TextureId};
+use ohm_core::{DrawList, Error, ErrorKind, Result};
 use self_cell::self_cell;
 use slotmap::SlotMap;
 use wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
@@ -516,7 +516,7 @@ impl RendererContext {
         }
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.push_debug_group("ohm2d-textures");
+        encoder.push_debug_group("ohm-textures");
 
         for command in commands.drain(..) {
             match command {
@@ -662,7 +662,7 @@ impl RendererContext {
         let mut touched_surfaces = HashSet::new();
         let mut touched_framebuffers = HashSet::new();
 
-        encoder.push_debug_group("ohm2d");
+        encoder.push_debug_group("ohm");
 
         while let Some(batch) = batches.peek() {
             let surface_id = batch.surface;
@@ -783,7 +783,7 @@ impl RendererContext {
         }
 
         encoder.pop_debug_group(); // present
-        encoder.pop_debug_group(); // ohm2d
+        encoder.pop_debug_group(); // ohm
 
         self.queue.submit(std::iter::once(encoder.finish()));
     }

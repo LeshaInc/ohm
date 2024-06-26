@@ -1,9 +1,9 @@
 [package]
-name = "ohm2d-freetype"
+name = "ohm-freetype"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ohm2d-core.workspace = true
+ohm-core.workspace = true
 
 freetype-rs.workspace = true

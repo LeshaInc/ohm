@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use ohm2d_core::text::{
+use ohm_core::text::{
     FontAttrs, FontDatabase, FontFace, FontFamily, FontId, FontStyle, FontWidth,
 };
-use ohm2d_core::{Error, ErrorKind, Result};
+use ohm_core::{Error, ErrorKind, Result};
 
 #[derive(Debug)]
 pub struct SystemFontDatabase {

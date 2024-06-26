@@ -1,10 +1,10 @@
 [package]
-name = "ohm2d-wgpu"
+name = "ohm-wgpu"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ohm2d-core.workspace = true
+ohm-core.workspace = true
 
 encase.workspace = true
 pollster.workspace = true
