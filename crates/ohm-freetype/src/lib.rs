@@ -98,11 +98,15 @@ impl Rasterizer for FreetypeRasterizer {
 
         let reverse = bitmap.pitch() < 0;
 
-        let data = if reverse {
+        let mut data = if reverse {
             data.rev().flatten().collect::<Vec<_>>()
         } else {
             data.flatten().collect::<Vec<_>>()
         };
+
+        for v in &mut data {
+            *v = (((*v as f32) / 255.0).powf(1.0 / 2.2) * 255.0) as u8;
+        }
 
         let image = ImageData {
             format,
