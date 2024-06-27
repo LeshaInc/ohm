@@ -25,9 +25,17 @@ pub struct DrawList<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Command<'a> {
+    ClearRect(ClearRect),
     DrawRect(DrawRect),
     DrawGlyph(DrawGlyph),
     DrawLayer(DrawLayer<'a>),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ClearRect {
+    pub pos: Vec2,
+    pub size: Vec2,
+    pub color: Color,
 }
 
 #[derive(Debug, Clone, Copy)]

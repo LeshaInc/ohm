@@ -7,8 +7,8 @@ use ohm::renderer::SurfaceId;
 use ohm::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm::texture::MipmapMode;
 use ohm::{
-    Border, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill, FillImage,
-    Graphics, Shadow,
+    Border, ClearRect, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill,
+    FillImage, Graphics, Shadow,
 };
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -272,6 +272,12 @@ impl ApplicationHandler for App {
                         shadow: None,
                     }));
                 }
+
+                commands.push(Command::ClearRect(ClearRect {
+                    pos: vec2(200.0, 200.0),
+                    size: vec2(300.0, 500.0),
+                    color: Color::rgba(0.0, 0.0, 0.0, 0.0),
+                }));
 
                 state
                     .graphics

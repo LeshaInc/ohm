@@ -9,7 +9,9 @@ use crate::image::ImageFormat;
 use crate::math::{Rect, URect, UVec2, Vec2, Vec4};
 use crate::text::{GlyphKey, SubpixelBin};
 use crate::texture::{TextureCache, TextureId};
-use crate::{Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill};
+use crate::{
+    ClearRect, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill,
+};
 
 pub const INSTANCE_FILL: u32 = 4294967295;
 pub const INSTANCE_FILL_GRAY: u32 = 4294967294;
@@ -177,26 +179,12 @@ impl Batcher<'_> {
         }
     }
 
-    pub fn prepare(&mut self, surface_size: UVec2, draw_list: &DrawList) {
+    pub fn prepare(&mut self, draw_list: &DrawList) {
         if draw_list.commands.is_empty() {
             return;
         }
 
-        self.cur_clear = true;
-        self.cur_source = Source::White;
-        self.cur_target = Target::Surface(draw_list.surface);
-        self.add_quad(Quad {
-            min: Vec2::ZERO,
-            max: surface_size.as_vec2(),
-            local_min: Vec2::ZERO,
-            local_max: Vec2::ZERO,
-            tex_min: Vec2::ZERO,
-            tex_max: Vec2::ZERO,
-            color: Vec4::ZERO,
-            instance_id: INSTANCE_FILL,
-        });
-        self.flush();
-
+        self.set_target(Target::Surface(draw_list.surface));
         self.dispatch_commands(draw_list.commands, Affine2::IDENTITY);
     }
 
@@ -226,6 +214,8 @@ impl Batcher<'_> {
 
         for command in commands {
             let rect = match command {
+                Command::ClearRect(rect) => Rect::new(rect.pos, rect.pos + rect.size),
+
                 Command::DrawRect(rect) => {
                     let shadow_offset = rect.shadow.map(|s| s.offset).unwrap_or(Vec2::ZERO);
                     let shadow_blur_radius = rect.shadow.map(|s| s.blur_radius).unwrap_or(0.0);
@@ -364,6 +354,7 @@ impl Batcher<'_> {
 
         for &command in commands {
             match command {
+                Command::ClearRect(rect) => self.cmd_clear_rect(rect),
                 Command::DrawRect(rect) => self.cmd_draw_rect(rect),
                 Command::DrawGlyph(glyph) => self.cmd_draw_glyph(glyph),
                 Command::DrawLayer(layer) => self.cmd_draw_layer(layer),
@@ -379,7 +370,22 @@ impl Batcher<'_> {
         first_batch..self.batches.len()
     }
 
+    fn cmd_clear_rect(&mut self, rect: ClearRect) {
+        self.set_clear(true);
+        self.set_source(Source::White);
+
+        self.add_quad(Quad {
+            min: rect.pos,
+            max: rect.pos + rect.size,
+            color: rect.color.into(),
+            instance_id: INSTANCE_FILL,
+            ..Quad::default()
+        });
+    }
+
     fn cmd_draw_rect(&mut self, rect: DrawRect) {
+        self.set_clear(false);
+
         let color = match rect.fill {
             Fill::Solid(color) => color,
             Fill::Image(fill) => fill.tint,
@@ -478,6 +484,8 @@ impl Batcher<'_> {
     }
 
     fn cmd_draw_glyph(&mut self, glyph: DrawGlyph) {
+        self.set_clear(false);
+
         let color = glyph.color;
         let pos = glyph.pos;
 
@@ -519,6 +527,8 @@ impl Batcher<'_> {
     }
 
     fn cmd_draw_layer(&mut self, layer: DrawLayer<'_>) {
+        self.set_clear(false);
+
         let is_no_tint = layer.tint == Color::WHITE;
         let is_compatible_scissor = layer.scissor.is_none();
 
@@ -549,32 +559,20 @@ impl Batcher<'_> {
         let intermediate_alloc = self.alloc_intermediate(intermediate, rect.size().as_uvec2());
 
         let old_target = self.cur_target;
-        self.cur_target = Target::IntermediateMsaa(intermediate);
+        self.set_target(Target::IntermediateMsaa(intermediate));
 
         self.transform_stack.push(Affine2::IDENTITY);
-        self.cur_clear = true;
-        self.cur_source = Source::White;
-        self.add_quad(Quad {
-            min: intermediate_alloc.rect.min.as_vec2(),
-            max: intermediate_alloc.rect.max.as_vec2(),
-            local_min: Vec2::ZERO,
-            local_max: Vec2::ZERO,
-            tex_min: Vec2::ZERO,
-            tex_max: Vec2::ZERO,
-            color: Vec4::ZERO,
-            instance_id: INSTANCE_FILL,
+        self.cmd_clear_rect(ClearRect {
+            pos: intermediate_alloc.rect.min.as_vec2(),
+            size: intermediate_alloc.rect.size().as_vec2(),
+            color: Color::TRANSPAENT,
         });
-        self.flush();
         self.transform_stack.pop();
 
         self.transform_stack
             .push(Affine2::from_translation(-rect.min) * layer_transform);
-
         self.dispatch_commands(layer.commands, Affine2::IDENTITY);
         self.transform_stack.pop();
-
-        self.cur_target = old_target;
-        self.cur_source = Source::White;
 
         let tex_size = self.intermediate_allocators[intermediate as usize].size();
         let tex_size = Vec2::new(tex_size.width as f32, tex_size.height as f32);
@@ -582,8 +580,8 @@ impl Batcher<'_> {
         let tex_min = intermediate_alloc.rect.min.as_vec2() / tex_size;
         let tex_max = intermediate_alloc.rect.max.as_vec2() / tex_size;
 
-        self.cur_source = Source::White;
-        self.cur_source = Source::Intermediate(intermediate);
+        self.set_target(old_target);
+        self.set_source(Source::Intermediate(intermediate));
 
         self.transform_stack.push(Affine2::IDENTITY);
         self.add_quad(Quad {
@@ -620,8 +618,6 @@ impl Batcher<'_> {
             vertex_range,
             instance_buffer_id: self.cur_instance_buffer_id,
         });
-
-        self.cur_clear = false;
     }
 
     fn set_source(&mut self, source: Source) {
@@ -630,6 +626,22 @@ impl Batcher<'_> {
         }
 
         self.cur_source = source;
+    }
+
+    fn set_target(&mut self, target: Target) {
+        if self.cur_target != target {
+            self.flush();
+        }
+
+        self.cur_target = target;
+    }
+
+    fn set_clear(&mut self, clear: bool) {
+        if self.cur_clear != clear {
+            self.flush();
+        }
+
+        self.cur_clear = clear;
     }
 
     fn add_vertex(&mut self, mut vertex: Vertex) -> u32 {

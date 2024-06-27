@@ -139,6 +139,8 @@ struct RendererContext {
     uber_bind_group_layout: BindGroupLayout,
     uber_render_pipeline: RenderPipeline,
     uber_render_pipeline_msaa: RenderPipeline,
+    uber_render_pipeline_noblend: RenderPipeline,
+    uber_render_pipeline_noblend_msaa: RenderPipeline,
     blit_bind_group_layout: BindGroupLayout,
     blit_render_pipeline_layout: PipelineLayout,
     blit_render_pipeline_shader_module: ShaderModule,
@@ -180,10 +182,26 @@ impl RendererContext {
         let shader_module = create_shader_module(&device, include_str!("uber.wgsl"));
 
         let uber_render_pipeline =
-            create_uber_render_pipeline(&device, &pipeline_layout, &shader_module, 1);
+            create_uber_render_pipeline(&device, &pipeline_layout, &shader_module, true, 1);
 
-        let uber_render_pipeline_msaa =
-            create_uber_render_pipeline(&device, &pipeline_layout, &shader_module, msaa_samples);
+        let uber_render_pipeline_msaa = create_uber_render_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader_module,
+            true,
+            msaa_samples,
+        );
+
+        let uber_render_pipeline_noblend =
+            create_uber_render_pipeline(&device, &pipeline_layout, &shader_module, false, 1);
+
+        let uber_render_pipeline_noblend_msaa = create_uber_render_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader_module,
+            false,
+            msaa_samples,
+        );
 
         let blit_bind_group_layout = create_blit_bind_group_layout(&device);
         let blit_render_pipeline_layout = create_pipeline_layout(&device, &blit_bind_group_layout);
@@ -219,6 +237,8 @@ impl RendererContext {
             uber_bind_group_layout,
             uber_render_pipeline,
             uber_render_pipeline_msaa,
+            uber_render_pipeline_noblend,
+            uber_render_pipeline_noblend_msaa,
             blit_bind_group_layout,
             blit_render_pipeline_layout,
             blit_render_pipeline_shader_module,
@@ -516,7 +536,7 @@ impl RendererContext {
                     view: &dst_view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(wgpu::Color::BLACK),
+                        load: LoadOp::Clear(wgpu::Color::TRANSPARENT),
                         store: StoreOp::Store,
                     },
                 })],
@@ -653,9 +673,7 @@ impl RendererContext {
         );
 
         for list in draw_lists {
-            let surface_config = &self.surfaces[list.surface].config;
-            let surface_size = UVec2::new(surface_config.width, surface_config.height);
-            batcher.prepare(surface_size, list);
+            batcher.prepare(list);
         }
 
         for intermediate in [Intermediate::A, Intermediate::B] {
@@ -730,14 +748,6 @@ impl RendererContext {
         encoder.push_debug_group("ohm");
 
         while let Some(batch) = batches.peek() {
-            let target = batch.target;
-
-            let load = if batch.clear {
-                LoadOp::Clear(Color::TRANSPARENT)
-            } else {
-                LoadOp::Load
-            };
-
             let view = match batch.target {
                 Target::Surface(id) => {
                     touched_surfaces.insert(id);
@@ -766,7 +776,7 @@ impl RendererContext {
                     view,
                     resolve_target,
                     ops: Operations {
-                        load,
+                        load: LoadOp::Load,
                         store: StoreOp::Store,
                     },
                 })],
@@ -775,16 +785,28 @@ impl RendererContext {
                 occlusion_query_set: None,
             });
 
-            if resolve_target.is_some() {
-                pass.set_pipeline(&self.uber_render_pipeline_msaa);
+            let pipeline = if resolve_target.is_some() {
+                if batch.clear {
+                    &self.uber_render_pipeline_noblend_msaa
+                } else {
+                    &self.uber_render_pipeline_msaa
+                }
             } else {
-                pass.set_pipeline(&self.uber_render_pipeline);
-            }
+                if batch.clear {
+                    &self.uber_render_pipeline_noblend
+                } else {
+                    &self.uber_render_pipeline
+                }
+            };
 
+            pass.set_pipeline(pipeline);
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint32);
 
-            while let Some(batch) = batches.next_if(|b| b.target == target) {
+            let target = batch.target;
+            let clear = batch.clear;
+
+            while let Some(batch) = batches.next_if(|b| b.clear == clear && b.target == target) {
                 if batch.index_range.is_empty() {
                     continue;
                 }
@@ -1158,6 +1180,7 @@ fn create_uber_render_pipeline(
     device: &Device,
     layout: &PipelineLayout,
     shader_module: &ShaderModule,
+    blend: bool,
     samples: u32,
 ) -> RenderPipeline {
     device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -1211,7 +1234,7 @@ fn create_uber_render_pipeline(
             entry_point: "fs_main",
             targets: &[Some(ColorTargetState {
                 format: TextureFormat::Rgba8UnormSrgb,
-                blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                blend: blend.then_some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                 write_mask: ColorWrites::all(),
             })],
             compilation_options: Default::default(),
