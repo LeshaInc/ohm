@@ -1,10 +1,12 @@
+use std::fmt;
 use std::ops::Range;
 
 use glam::Affine2;
+use guillotiere::{AllocId, AtlasAllocator};
 
 use super::SurfaceId;
 use crate::image::ImageFormat;
-use crate::math::{Rect, UVec2, Vec2, Vec4};
+use crate::math::{Rect, URect, UVec2, Vec2, Vec4};
 use crate::text::{GlyphKey, SubpixelBin};
 use crate::texture::{TextureCache, TextureId};
 use crate::{Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill};
@@ -22,6 +24,18 @@ pub struct Vertex {
     pub instance_id: u32,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct Quad {
+    min: Vec2,
+    max: Vec2,
+    local_min: Vec2,
+    local_max: Vec2,
+    tex_min: Vec2,
+    tex_max: Vec2,
+    color: Vec4,
+    instance_id: u32,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Instance {
@@ -35,69 +49,106 @@ pub struct Instance {
     pub shadow_spread_radius: f32,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct Quad {
-    min: Vec2,
-    max: Vec2,
-    local_min: Vec2,
-    local_max: Vec2,
-    tex_min: Vec2,
-    tex_max: Vec2,
-    color: Vec4,
-    instance_id: u32,
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub struct FramebufferId(pub u64);
 
-#[derive(Debug, Default)]
-pub struct BatcherScratch {
-    vertices: Vec<Vertex>,
-    indices: Vec<u32>,
-    instances: Vec<Instance>,
-    batches: Vec<Batch>,
-}
-
-impl BatcherScratch {
-    pub fn clear(&mut self) {
-        self.vertices.clear();
-        self.indices.clear();
-        self.instances.clear();
-        self.batches.clear();
-    }
-}
-
-#[derive(Debug)]
-pub struct Batcher<'a> {
-    texture_cache: &'a TextureCache,
-    vertices: &'a mut Vec<Vertex>,
-    indices: &'a mut Vec<u32>,
-    instances: &'a mut Vec<Instance>,
-    batches: &'a mut Vec<Batch>,
-    cur_surface: SurfaceId,
-    cur_surface_size: UVec2,
-    cur_framebuffer: FramebufferId,
-    cur_source: Source,
-    max_instances_per_buffer: usize,
-    cur_instance_buffer_id: usize,
-    last_index: u32,
-    transform_stack: Vec<Affine2>,
-}
-
 #[derive(Debug)]
 pub struct Batch {
-    pub surface: SurfaceId,
-    pub framebuffer: FramebufferId,
+    pub clear: bool,
+    pub target: Target,
     pub source: Source,
     pub index_range: Range<u32>,
+    pub vertex_range: Range<u32>,
     pub instance_buffer_id: usize,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[repr(u8)]
+pub enum Intermediate {
+    A,
+    B,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IntermediateAllocation {
+    intermediate: Intermediate,
+    alloc_id: AllocId,
+    rect: URect,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum Target {
+    Surface(SurfaceId),
+    Intermediate(Intermediate),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Source {
     White,
     Texture(TextureId),
-    Framebuffer(SurfaceId, FramebufferId),
+    Intermediate(Intermediate),
+}
+
+pub struct BatcherScratch {
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+    instances: Vec<Instance>,
+    batches: Vec<Batch>,
+    transform_stack: Vec<Affine2>,
+    intermediate_allocators: [AtlasAllocator; 2],
+}
+
+impl BatcherScratch {
+    pub fn new() -> BatcherScratch {
+        BatcherScratch::default()
+    }
+
+    pub fn clear(&mut self) {
+        self.vertices.clear();
+        self.indices.clear();
+        self.instances.clear();
+        self.batches.clear();
+        self.transform_stack.clear();
+    }
+}
+
+impl Default for BatcherScratch {
+    fn default() -> Self {
+        Self {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            instances: Vec::new(),
+            batches: Vec::new(),
+            transform_stack: Vec::new(),
+            intermediate_allocators: [
+                AtlasAllocator::new(guillotiere_size2d(UVec2::new(256, 256))),
+                AtlasAllocator::new(guillotiere_size2d(UVec2::new(256, 256))),
+            ],
+        }
+    }
+}
+
+impl fmt::Debug for BatcherScratch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BatcherScratch").finish_non_exhaustive()
+    }
+}
+
+pub struct Batcher<'a> {
+    texture_cache: &'a TextureCache,
+    vertices: &'a mut Vec<Vertex>,
+    indices: &'a mut Vec<u32>,
+    instances: &'a mut Vec<Instance>,
+    batches: &'a mut Vec<Batch>,
+    transform_stack: &'a mut Vec<Affine2>,
+    intermediate_allocators: &'a mut [AtlasAllocator; 2],
+    cur_clear: bool,
+    cur_target: Target,
+    cur_source: Source,
+    max_instances_per_buffer: usize,
+    cur_instance_buffer_id: usize,
+    last_index: u32,
+    last_vertex: u32,
 }
 
 impl Batcher<'_> {
@@ -113,24 +164,25 @@ impl Batcher<'_> {
             indices: &mut scratch.indices,
             instances: &mut scratch.instances,
             batches: &mut scratch.batches,
-            cur_surface: SurfaceId::default(),
-            cur_surface_size: UVec2::ZERO,
-            cur_framebuffer: FramebufferId(0),
+            transform_stack: &mut scratch.transform_stack,
+            intermediate_allocators: &mut scratch.intermediate_allocators,
+            cur_clear: false,
+            cur_target: Target::Intermediate(Intermediate::A),
             cur_source: Source::White,
             max_instances_per_buffer,
             cur_instance_buffer_id: 0,
             last_index: 0,
-            transform_stack: Vec::new(),
+            last_vertex: 0,
         }
     }
 
-    pub fn prepare(&mut self, surface_size: UVec2, draw_list: &DrawList) {
+    pub fn prepare(&mut self, _surface_size: UVec2, draw_list: &DrawList) {
         if draw_list.commands.is_empty() {
             return;
         }
 
-        self.cur_surface = draw_list.surface;
-        self.cur_surface_size = surface_size;
+        self.cur_clear = false;
+        self.cur_target = Target::Surface(draw_list.surface);
         self.dispatch_commands(draw_list.commands, Affine2::IDENTITY);
     }
 
@@ -150,23 +202,62 @@ impl Batcher<'_> {
         self.instances
     }
 
-    fn compute_bouding_rect(&self, batch_range: Range<usize>) -> Option<Rect> {
-        let mut rect: Option<Rect> = None;
+    pub fn intermediate_size(&self, intermediate: Intermediate) -> UVec2 {
+        let size = self.intermediate_allocators[intermediate as usize].size();
+        UVec2::new(size.width as u32, size.height as u32)
+    }
 
-        for batch_idx in batch_range {
-            for idx in self.batches[batch_idx].index_range.clone() {
-                let idx = self.indices[idx as usize];
-                let pos = self.vertices[idx as usize].pos;
-                if let Some(rect) = &mut rect {
-                    rect.min = rect.min.min(pos);
-                    rect.max = rect.max.max(pos);
-                } else {
-                    rect = Some(Rect::new(pos, pos));
+    fn compute_bouding_rect(&self, commands: &[Command]) -> Option<Rect> {
+        let mut bounding_rect: Option<Rect> = None;
+
+        for command in commands {
+            let rect = match command {
+                Command::DrawRect(rect) => {
+                    let shadow_offset = rect.shadow.map(|s| s.offset).unwrap_or(Vec2::ZERO);
+                    let shadow_blur_radius = rect.shadow.map(|s| s.blur_radius).unwrap_or(0.0);
+                    let shadow_spread_radius = rect.shadow.map(|s| s.spread_radius).unwrap_or(0.0);
+                    let shadow_radius = Vec2::splat(shadow_blur_radius + shadow_spread_radius);
+
+                    let rect_min = rect.pos;
+                    let rect_max = rect.pos + rect.size;
+
+                    let shadow_min = rect_min - shadow_radius + shadow_offset;
+                    let shadow_max = rect_max + shadow_radius + shadow_offset;
+
+                    Rect::new(shadow_min.min(rect_min), shadow_max.max(rect_max))
                 }
-            }
+
+                Command::DrawGlyph(glyph) => {
+                    let pos = glyph.pos;
+                    let glyph_key = GlyphKey {
+                        font: glyph.font,
+                        glyph: glyph.glyph,
+                        size: glyph.size.to_bits(),
+                        subpixel_bin: SubpixelBin::new(pos),
+                    };
+
+                    let Some(glyph) = self.texture_cache.get_glyph(&glyph_key) else {
+                        continue;
+                    };
+
+                    let pos = pos.trunc() + glyph.offset;
+                    let size = glyph.rect.size().as_vec2();
+                    Rect::new(pos, pos + size)
+                }
+
+                Command::DrawLayer(layer) => {
+                    let Some(rect) = self.compute_bouding_rect(layer.commands) else {
+                        continue;
+                    };
+
+                    rect.transform(&layer.transform)
+                }
+            };
+
+            bounding_rect = bounding_rect.map(|v| v.union(rect)).or(Some(rect));
         }
 
-        rect
+        bounding_rect
     }
 
     fn push_transform(&mut self, transform: Affine2) {
@@ -180,6 +271,74 @@ impl Batcher<'_> {
 
     fn pop_transform(&mut self) {
         self.transform_stack.pop();
+    }
+
+    fn get_valid_intermediate(&self) -> Intermediate {
+        match self.cur_source {
+            Source::Intermediate(Intermediate::A) => Intermediate::B,
+            _ => Intermediate::A,
+        }
+    }
+
+    fn alloc_intermediate(
+        &mut self,
+        intermediate: Intermediate,
+        size: UVec2,
+    ) -> IntermediateAllocation {
+        let allocator = &mut self.intermediate_allocators[intermediate as usize];
+
+        let old_size = allocator.size().to_f32();
+
+        let alloc = loop {
+            match allocator.allocate(guillotiere_size2d(size)) {
+                Some(alloc) => break alloc,
+                None => {
+                    allocator.grow(allocator.size() * 2);
+                }
+            }
+        };
+
+        let new_size = allocator.size().to_f32();
+        if old_size != new_size {
+            let factor = Vec2::new(
+                old_size.width / new_size.width,
+                old_size.height / new_size.height,
+            );
+            self.rescale_intermediate_tex_coords(intermediate, factor);
+        }
+
+        IntermediateAllocation {
+            intermediate,
+            alloc_id: alloc.id,
+            rect: URect::new(
+                UVec2::new(alloc.rectangle.min.x as u32, alloc.rectangle.min.y as u32),
+                UVec2::new(alloc.rectangle.max.x as u32, alloc.rectangle.max.y as u32),
+            ),
+        }
+    }
+
+    fn rescale_intermediate_tex_coords(&mut self, intermediate: Intermediate, factor: Vec2) {
+        for batch in self.batches.iter_mut() {
+            if batch.source != Source::Intermediate(intermediate) {
+                continue;
+            }
+
+            for index in batch.vertex_range.clone() {
+                let vertex = &mut self.vertices[index as usize];
+                vertex.tex = vertex.tex * factor;
+            }
+        }
+
+        if self.cur_source == Source::Intermediate(intermediate) {
+            for vertex in &mut self.vertices[self.last_vertex as usize..] {
+                vertex.tex = vertex.tex * factor;
+            }
+        }
+    }
+
+    fn free_intermediate(&mut self, alloc: IntermediateAllocation) {
+        let allocator = &mut self.intermediate_allocators[alloc.intermediate as usize];
+        allocator.deallocate(alloc.alloc_id);
     }
 
     fn dispatch_commands(&mut self, commands: &[Command<'_>], transform: Affine2) -> Range<usize> {
@@ -348,22 +507,52 @@ impl Batcher<'_> {
             return;
         }
 
-        self.flush();
-
-        let old_framebuffer = self.cur_framebuffer;
-        self.cur_framebuffer.0 += 1;
-
-        let batch_range = self.dispatch_commands(layer.commands, layer.transform);
-
-        let Some(rect) = self.compute_bouding_rect(batch_range) else {
+        let Some(rect) = self.compute_bouding_rect(layer.commands) else {
             return;
         };
 
-        self.cur_source = Source::Framebuffer(self.cur_surface, self.cur_framebuffer);
-        self.cur_framebuffer = old_framebuffer;
+        let mut rect = rect.transform(&layer.transform);
+        rect.min = rect.min.floor() - 1.0;
+        rect.max = rect.max.ceil() + 1.0;
 
-        let tex_min = rect.min / self.cur_surface_size.as_vec2();
-        let tex_max = rect.max / self.cur_surface_size.as_vec2();
+        self.flush();
+
+        let intermediate = self.get_valid_intermediate();
+        let intermediate_alloc = self.alloc_intermediate(intermediate, rect.size().as_uvec2());
+
+        let translation = -rect.min + intermediate_alloc.rect.min.as_vec2();
+
+        let old_target = self.cur_target;
+        self.cur_target = Target::Intermediate(intermediate);
+
+        self.cur_clear = true;
+        self.add_quad(Quad {
+            min: rect.min,
+            max: rect.max,
+            local_min: Vec2::ZERO,
+            local_max: Vec2::ZERO,
+            tex_min: Vec2::ZERO,
+            tex_max: Vec2::ZERO,
+            color: Vec4::ZERO,
+            instance_id: INSTANCE_FILL,
+        });
+        self.flush();
+
+        self.push_transform(Affine2::from_translation(translation));
+        self.dispatch_commands(layer.commands, layer.transform);
+        self.pop_transform();
+
+        self.cur_target = old_target;
+        self.cur_source = Source::White;
+
+        let tex_size = self.intermediate_allocators[intermediate as usize].size();
+        let tex_size = Vec2::new(tex_size.width as f32, tex_size.height as f32);
+
+        let tex_min = intermediate_alloc.rect.min.as_vec2() / tex_size;
+        let tex_max = intermediate_alloc.rect.max.as_vec2() / tex_size;
+
+        self.cur_source = Source::White;
+        self.cur_source = Source::Intermediate(intermediate);
 
         self.add_quad(Quad {
             min: rect.min,
@@ -375,6 +564,8 @@ impl Batcher<'_> {
             color: layer.tint.into(),
             instance_id: INSTANCE_FILL,
         });
+
+        self.free_intermediate(intermediate_alloc);
     }
 
     fn flush(&mut self) {
@@ -383,14 +574,21 @@ impl Batcher<'_> {
             return;
         }
 
+        let vertex_range = self.last_vertex..self.vertices.len() as u32;
+
         self.last_index = index_range.end;
+        self.last_vertex = vertex_range.end;
+
         self.batches.push(Batch {
-            surface: self.cur_surface,
-            framebuffer: self.cur_framebuffer,
+            clear: self.cur_clear,
+            target: self.cur_target,
             source: self.cur_source,
             index_range,
+            vertex_range,
             instance_buffer_id: self.cur_instance_buffer_id,
         });
+
+        self.cur_clear = false;
     }
 
     fn set_source(&mut self, source: Source) {
@@ -455,4 +653,14 @@ impl Batcher<'_> {
         });
         self.indices.extend_from_slice(&[a, b, c, c, d, a]);
     }
+}
+
+impl fmt::Debug for Batcher<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Batcher").finish_non_exhaustive()
+    }
+}
+
+fn guillotiere_size2d(size: UVec2) -> guillotiere::Size {
+    guillotiere::Size::new(size.x as i32, size.y as i32)
 }

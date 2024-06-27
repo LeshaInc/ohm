@@ -5,8 +5,8 @@ use std::sync::Arc;
 use ohm_core::image::{ImageData, ImageFormat};
 use ohm_core::math::{URect, UVec2, Vec2, Vec4};
 use ohm_core::renderer::{
-    Batcher, BatcherScratch, Instance as BatcherInstance, Renderer, Source, SurfaceId, Vertex,
-    WindowHandle,
+    Batcher, BatcherScratch, Instance as BatcherInstance, Intermediate, Renderer, Source,
+    SurfaceId, Target, Vertex, WindowHandle,
 };
 use ohm_core::texture::{MipmapMode, TextureCache, TextureCommand, TextureId};
 use ohm_core::{DrawList, Error, ErrorKind, Result};
@@ -99,25 +99,6 @@ impl Default for WgpuRenderer {
 }
 
 #[derive(Debug)]
-struct RendererContext {
-    batcher_scratch: BatcherScratch,
-    adapter: Adapter,
-    device: Device,
-    queue: Queue,
-    uber_bind_group_layout: BindGroupLayout,
-    uber_render_pipeline: RenderPipeline,
-    blit_bind_group_layout: BindGroupLayout,
-    blit_render_pipeline_layout: PipelineLayout,
-    blit_render_pipeline_shader_module: ShaderModule,
-    blit_render_pipelines: HashMap<TextureFormat, RenderPipeline>,
-    textures: HashMap<TextureId, TextureEntry>,
-    white_texture_view: TextureView,
-    sampler: Sampler,
-    surfaces: SlotMap<SurfaceId, SurfaceEntry>,
-    to_present: Vec<SurfaceTexture>,
-}
-
-#[derive(Debug)]
 struct TextureEntry {
     texture: Texture,
     view: TextureView,
@@ -128,14 +109,14 @@ struct TextureEntry {
 struct SurfaceEntry {
     surface: OwnedSurface,
     config: SurfaceConfiguration,
-    framebuffers: Vec<Framebuffer>,
+    texture_view: TextureView,
+    texture_view_srgbless: TextureView,
 }
 
 impl fmt::Debug for SurfaceEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SurfaceEntry")
             .field("config", &self.config)
-            .field("framebuffers", &self.framebuffers)
             .finish_non_exhaustive()
     }
 }
@@ -149,9 +130,24 @@ self_cell! {
 }
 
 #[derive(Debug)]
-struct Framebuffer {
-    texture_view: TextureView,
-    texture_view_srgbless: TextureView,
+struct RendererContext {
+    batcher_scratch: BatcherScratch,
+    adapter: Adapter,
+    device: Device,
+    queue: Queue,
+    uber_bind_group_layout: BindGroupLayout,
+    uber_render_pipeline: RenderPipeline,
+    blit_bind_group_layout: BindGroupLayout,
+    blit_render_pipeline_layout: PipelineLayout,
+    blit_render_pipeline_shader_module: ShaderModule,
+    blit_render_pipelines: HashMap<TextureFormat, RenderPipeline>,
+    textures: HashMap<TextureId, TextureEntry>,
+    white_texture_view: TextureView,
+    intermediate_texture_views: [TextureView; 2],
+    intermediate_texture_sizes: [UVec2; 2],
+    sampler: Sampler,
+    surfaces: SlotMap<SurfaceId, SurfaceEntry>,
+    to_present: Vec<SurfaceTexture>,
 }
 
 impl RendererContext {
@@ -176,6 +172,13 @@ impl RendererContext {
         let white_texture_view = create_white_texture_view(&device, &queue);
         let sampler = create_sampler(&device);
 
+        let size = UVec2::new(256, 256);
+        let intermediate_texture_views = [
+            create_draw_texture(&device, size.x, size.y).create_view(&Default::default()),
+            create_draw_texture(&device, size.x, size.y).create_view(&Default::default()),
+        ];
+        let intermediate_texture_sizes = [size, size];
+
         Ok(RendererContext {
             batcher_scratch: BatcherScratch::default(),
             adapter,
@@ -189,6 +192,8 @@ impl RendererContext {
             blit_render_pipelines,
             textures: HashMap::default(),
             white_texture_view,
+            intermediate_texture_views,
+            intermediate_texture_sizes,
             sampler,
             surfaces: SlotMap::default(),
             to_present: Vec::new(),
@@ -225,12 +230,20 @@ impl RendererContext {
 
         surface.borrow_dependent().configure(&self.device, &config);
 
-        let framebuffer = create_framebuffer(&self.device, size.x, size.y);
+        let texture = create_draw_texture(&self.device, size.x, size.y);
+
+        let texture_view = texture.create_view(&Default::default());
+
+        let texture_view_srgbless = texture.create_view(&TextureViewDescriptor {
+            format: Some(TextureFormat::Rgba8Unorm),
+            ..Default::default()
+        });
 
         let id = self.surfaces.insert(SurfaceEntry {
             surface,
             config,
-            framebuffers: vec![framebuffer],
+            texture_view,
+            texture_view_srgbless,
         });
 
         Ok(id)
@@ -245,8 +258,17 @@ impl RendererContext {
             .borrow_dependent()
             .configure(&self.device, &entry.config);
 
-        let framebuffer = create_framebuffer(&self.device, size.x, size.y);
-        entry.framebuffers = vec![framebuffer];
+        let texture = create_draw_texture(&self.device, size.x, size.y);
+
+        let texture_view = texture.create_view(&Default::default());
+
+        let texture_view_srgbless = texture.create_view(&TextureViewDescriptor {
+            format: Some(TextureFormat::Rgba8Unorm),
+            ..Default::default()
+        });
+
+        entry.texture_view = texture_view;
+        entry.texture_view_srgbless = texture_view_srgbless;
     }
 
     fn destroy_surface(&mut self, id: SurfaceId) {
@@ -602,28 +624,36 @@ impl RendererContext {
             batcher.prepare(surface_size, list);
         }
 
+        for intermediate in [Intermediate::A, Intermediate::B] {
+            let size = batcher.intermediate_size(intermediate);
+            if size == self.intermediate_texture_sizes[intermediate as usize] {
+                continue;
+            }
+
+            self.intermediate_texture_views[intermediate as usize] =
+                create_draw_texture(&self.device, size.x, size.y).create_view(&Default::default());
+            self.intermediate_texture_sizes[intermediate as usize] = size;
+        }
+
         let vertex_buffer = create_vertex_buffer(&self.device, batcher.vertices());
         let index_buffer = create_index_buffer(&self.device, batcher.indices());
 
         let mut bind_groups = HashMap::new();
 
         for batch in batcher.batches() {
-            let surface = &mut self.surfaces[batch.surface];
-            let framebuffers = &mut surface.framebuffers;
-
-            while framebuffers.len() <= batch.framebuffer.0 as usize {
-                framebuffers.push(create_framebuffer(
-                    &self.device,
-                    surface.config.width,
-                    surface.config.height,
-                ));
-            }
-
             bind_groups
-                .entry((batch.instance_buffer_id, batch.source))
+                .entry((batch.target, batch.source, batch.instance_buffer_id))
                 .or_insert_with(|| {
-                    let config = &self.surfaces[batch.surface].config;
-                    let resolution = UVec2::new(config.width, config.height).as_vec2();
+                    let resolution = match batch.target {
+                        Target::Surface(id) => {
+                            let config = &self.surfaces[id].config;
+                            UVec2::new(config.width, config.height).as_vec2()
+                        }
+                        Target::Intermediate(intermediate) => {
+                            self.intermediate_texture_sizes[intermediate as usize].as_vec2()
+                        }
+                    };
+
                     let globals = Globals { resolution };
 
                     let texture_view = match batch.source {
@@ -633,12 +663,9 @@ impl RendererContext {
                             .get(&id)
                             .map(|t| &t.view)
                             .unwrap_or(&self.white_texture_view),
-                        Source::Framebuffer(surface, framebuffer) => self
-                            .surfaces
-                            .get(surface)
-                            .and_then(|surface| surface.framebuffers.get(framebuffer.0 as usize))
-                            .map(|t| &t.texture_view)
-                            .unwrap_or(&self.white_texture_view),
+                        Source::Intermediate(intermediate) => {
+                            &self.intermediate_texture_views[intermediate as usize]
+                        }
                     };
 
                     create_uber_bind_group(
@@ -660,33 +687,34 @@ impl RendererContext {
         let mut batches = batcher.batches().iter().peekable();
 
         let mut touched_surfaces = HashSet::new();
-        let mut touched_framebuffers = HashSet::new();
 
         encoder.push_debug_group("ohm");
 
         while let Some(batch) = batches.peek() {
-            let surface_id = batch.surface;
-            let framebuffer_id = batch.framebuffer;
+            let target = batch.target;
 
-            touched_surfaces.insert(surface_id);
-
-            let load_op = if touched_framebuffers.contains(&(surface_id, framebuffer_id)) {
-                LoadOp::Load
-            } else {
-                touched_framebuffers.insert((surface_id, framebuffer_id));
+            let load_op = if batch.clear {
                 LoadOp::Clear(Color::TRANSPARENT)
+            } else {
+                LoadOp::Load
             };
 
-            let surface = &self.surfaces[surface_id];
-            let framebuffers = &surface.framebuffers;
-            let framebuffer = &framebuffers[framebuffer_id.0 as usize];
+            let target_view = match batch.target {
+                Target::Surface(id) => {
+                    touched_surfaces.insert(id);
+                    &self.surfaces[id].texture_view
+                }
+                Target::Intermediate(intermediate) => {
+                    &self.intermediate_texture_views[intermediate as usize]
+                }
+            };
 
             encoder.push_debug_group("pass");
 
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &framebuffer.texture_view,
+                    view: &target_view,
                     resolve_target: None,
                     ops: Operations {
                         load: load_op,
@@ -702,15 +730,13 @@ impl RendererContext {
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint32);
 
-            while let Some(batch) =
-                batches.next_if(|b| b.surface == surface_id && b.framebuffer == framebuffer_id)
-            {
+            while let Some(batch) = batches.next_if(|b| b.target == target) {
                 if batch.index_range.is_empty() {
                     continue;
                 }
 
                 let bind_group = bind_groups
-                    .get(&(batch.instance_buffer_id, batch.source))
+                    .get(&(batch.target, batch.source, batch.instance_buffer_id))
                     .unwrap();
                 pass.set_bind_group(0, bind_group, &[]);
                 pass.draw_indexed(batch.index_range.clone(), 0, 0..1);
@@ -722,7 +748,7 @@ impl RendererContext {
 
         self.to_present.clear();
 
-        encoder.push_debug_group("present");
+        encoder.push_debug_group("blit");
 
         for surface in touched_surfaces {
             let surface_entry = &self.surfaces[surface];
@@ -735,15 +761,13 @@ impl RendererContext {
             let surface_view = frame.texture.create_view(&TextureViewDescriptor::default());
             self.to_present.push(frame);
 
-            let framebuffer = &surface_entry.framebuffers[0];
-
             let bind_group = create_blit_bind_group(
                 &self.device,
                 &self.blit_bind_group_layout,
                 if surface_format.is_srgb() {
-                    &framebuffer.texture_view
+                    &surface_entry.texture_view
                 } else {
-                    &framebuffer.texture_view_srgbless
+                    &surface_entry.texture_view_srgbless
                 },
                 &self.sampler,
             );
@@ -782,7 +806,7 @@ impl RendererContext {
             drop(rpass);
         }
 
-        encoder.pop_debug_group(); // present
+        encoder.pop_debug_group(); // blit
         encoder.pop_debug_group(); // ohm
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -1210,8 +1234,8 @@ fn create_sampler(device: &Device) -> Sampler {
     })
 }
 
-fn create_framebuffer(device: &Device, width: u32, height: u32) -> Framebuffer {
-    let texture = device.create_texture(&TextureDescriptor {
+fn create_draw_texture(device: &Device, width: u32, height: u32) -> Texture {
+    device.create_texture(&TextureDescriptor {
         label: None,
         size: Extent3d {
             width,
@@ -1224,19 +1248,7 @@ fn create_framebuffer(device: &Device, width: u32, height: u32) -> Framebuffer {
         format: TextureFormat::Rgba8UnormSrgb,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[TextureFormat::Rgba8Unorm],
-    });
-
-    let texture_view = texture.create_view(&Default::default());
-
-    let texture_view_srgbless = texture.create_view(&TextureViewDescriptor {
-        format: Some(TextureFormat::Rgba8Unorm),
-        ..Default::default()
-    });
-
-    Framebuffer {
-        texture_view,
-        texture_view_srgbless,
-    }
+    })
 }
 
 fn map_format(format: ImageFormat) -> TextureFormat {

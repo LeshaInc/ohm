@@ -1,4 +1,4 @@
-use crate::math::{UVec2, Vec2};
+use crate::math::{Affine2, UVec2, Vec2};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct URect {
@@ -33,5 +33,27 @@ impl Rect {
 
     pub fn size(&self) -> Vec2 {
         self.max - self.min
+    }
+
+    pub fn transform(self, transform: &Affine2) -> Rect {
+        let mut vertices = [
+            self.min,
+            Vec2::new(self.min.x, self.max.y),
+            Vec2::new(self.max.x, self.min.y),
+            self.max,
+        ];
+
+        for vertex in &mut vertices {
+            *vertex = transform.transform_point2(*vertex);
+        }
+
+        let min = vertices.into_iter().reduce(Vec2::min).unwrap_or(self.min);
+        let max = vertices.into_iter().reduce(Vec2::max).unwrap_or(self.max);
+
+        Rect::new(min, max)
+    }
+
+    pub fn union(self, other: Rect) -> Rect {
+        Rect::new(self.min.min(other.min), self.max.max(other.max))
     }
 }

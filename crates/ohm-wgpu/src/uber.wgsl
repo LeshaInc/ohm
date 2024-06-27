@@ -66,7 +66,11 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let base_color = textureSample(texture, texture_sampler, in.tex);
+    var base_color = textureSample(texture, texture_sampler, in.tex);
+
+    base_color.r *= base_color.a;
+    base_color.g *= base_color.a;
+    base_color.b *= base_color.a;
 
     if in.instance_id == 4294967295u {
         return in.color * base_color;
