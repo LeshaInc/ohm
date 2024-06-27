@@ -135,8 +135,10 @@ struct RendererContext {
     adapter: Adapter,
     device: Device,
     queue: Queue,
+    msaa_samples: u32,
     uber_bind_group_layout: BindGroupLayout,
     uber_render_pipeline: RenderPipeline,
+    uber_render_pipeline_msaa: RenderPipeline,
     blit_bind_group_layout: BindGroupLayout,
     blit_render_pipeline_layout: PipelineLayout,
     blit_render_pipeline_shader_module: ShaderModule,
@@ -144,6 +146,7 @@ struct RendererContext {
     textures: HashMap<TextureId, TextureEntry>,
     white_texture_view: TextureView,
     intermediate_texture_views: [TextureView; 2],
+    intermediate_texture_views_msaa: [TextureView; 2],
     intermediate_texture_sizes: [UVec2; 2],
     sampler: Sampler,
     surfaces: SlotMap<SurfaceId, SurfaceEntry>,
@@ -156,12 +159,31 @@ impl RendererContext {
             pollster::block_on(create_adapter(instance, main_surface.borrow_dependent()))?;
         let (device, queue) = pollster::block_on(create_device(&adapter))?;
 
+        let format_flags = adapter
+            .get_texture_format_features(TextureFormat::Rgba8UnormSrgb)
+            .flags;
+
+        let mut msaa_samples = 1;
+        if format_flags.contains(TextureFormatFeatureFlags::MULTISAMPLE_X2) {
+            msaa_samples = 2;
+        }
+        if format_flags.contains(TextureFormatFeatureFlags::MULTISAMPLE_X4) {
+            msaa_samples = 4;
+        }
+        if format_flags.contains(TextureFormatFeatureFlags::MULTISAMPLE_X8) {
+            msaa_samples = 8;
+        }
+
         let uber_bind_group_layout = create_uber_bind_group_layout(&device);
 
         let pipeline_layout = create_pipeline_layout(&device, &uber_bind_group_layout);
         let shader_module = create_shader_module(&device, include_str!("uber.wgsl"));
+
         let uber_render_pipeline =
-            create_uber_render_pipeline(&device, &pipeline_layout, &shader_module);
+            create_uber_render_pipeline(&device, &pipeline_layout, &shader_module, 1);
+
+        let uber_render_pipeline_msaa =
+            create_uber_render_pipeline(&device, &pipeline_layout, &shader_module, msaa_samples);
 
         let blit_bind_group_layout = create_blit_bind_group_layout(&device);
         let blit_render_pipeline_layout = create_pipeline_layout(&device, &blit_bind_group_layout);
@@ -173,10 +195,19 @@ impl RendererContext {
         let sampler = create_sampler(&device);
 
         let size = UVec2::new(256, 256);
+
         let intermediate_texture_views = [
-            create_draw_texture(&device, size.x, size.y).create_view(&Default::default()),
-            create_draw_texture(&device, size.x, size.y).create_view(&Default::default()),
+            create_draw_texture(&device, size.x, size.y, 1).create_view(&Default::default()),
+            create_draw_texture(&device, size.x, size.y, 1).create_view(&Default::default()),
         ];
+
+        let intermediate_texture_views_msaa = [
+            create_draw_texture(&device, size.x, size.y, msaa_samples)
+                .create_view(&Default::default()),
+            create_draw_texture(&device, size.x, size.y, msaa_samples)
+                .create_view(&Default::default()),
+        ];
+
         let intermediate_texture_sizes = [size, size];
 
         Ok(RendererContext {
@@ -184,8 +215,10 @@ impl RendererContext {
             adapter,
             device,
             queue,
+            msaa_samples,
             uber_bind_group_layout,
             uber_render_pipeline,
+            uber_render_pipeline_msaa,
             blit_bind_group_layout,
             blit_render_pipeline_layout,
             blit_render_pipeline_shader_module,
@@ -193,6 +226,7 @@ impl RendererContext {
             textures: HashMap::default(),
             white_texture_view,
             intermediate_texture_views,
+            intermediate_texture_views_msaa,
             intermediate_texture_sizes,
             sampler,
             surfaces: SlotMap::default(),
@@ -230,7 +264,7 @@ impl RendererContext {
 
         surface.borrow_dependent().configure(&self.device, &config);
 
-        let texture = create_draw_texture(&self.device, size.x, size.y);
+        let texture = create_draw_texture(&self.device, size.x, size.y, 1);
 
         let texture_view = texture.create_view(&Default::default());
 
@@ -258,7 +292,7 @@ impl RendererContext {
             .borrow_dependent()
             .configure(&self.device, &entry.config);
 
-        let texture = create_draw_texture(&self.device, size.x, size.y);
+        let texture = create_draw_texture(&self.device, size.x, size.y, 1);
 
         let texture_view = texture.create_view(&Default::default());
 
@@ -631,7 +665,11 @@ impl RendererContext {
             }
 
             self.intermediate_texture_views[intermediate as usize] =
-                create_draw_texture(&self.device, size.x, size.y).create_view(&Default::default());
+                create_draw_texture(&self.device, size.x, size.y, 1)
+                    .create_view(&Default::default());
+            self.intermediate_texture_views_msaa[intermediate as usize] =
+                create_draw_texture(&self.device, size.x, size.y, self.msaa_samples)
+                    .create_view(&Default::default());
             self.intermediate_texture_sizes[intermediate as usize] = size;
         }
 
@@ -649,7 +687,8 @@ impl RendererContext {
                             let config = &self.surfaces[id].config;
                             UVec2::new(config.width, config.height).as_vec2()
                         }
-                        Target::Intermediate(intermediate) => {
+                        Target::Intermediate(intermediate)
+                        | Target::IntermediateMsaa(intermediate) => {
                             self.intermediate_texture_sizes[intermediate as usize].as_vec2()
                         }
                     };
@@ -693,13 +732,13 @@ impl RendererContext {
         while let Some(batch) = batches.peek() {
             let target = batch.target;
 
-            let load_op = if batch.clear {
+            let load = if batch.clear {
                 LoadOp::Clear(Color::TRANSPARENT)
             } else {
                 LoadOp::Load
             };
 
-            let target_view = match batch.target {
+            let view = match batch.target {
                 Target::Surface(id) => {
                     touched_surfaces.insert(id);
                     &self.surfaces[id].texture_view
@@ -707,6 +746,16 @@ impl RendererContext {
                 Target::Intermediate(intermediate) => {
                     &self.intermediate_texture_views[intermediate as usize]
                 }
+                Target::IntermediateMsaa(intermediate) => {
+                    &self.intermediate_texture_views_msaa[intermediate as usize]
+                }
+            };
+
+            let resolve_target = match batch.target {
+                Target::IntermediateMsaa(intermediate) => {
+                    Some(&self.intermediate_texture_views[intermediate as usize])
+                }
+                _ => None,
             };
 
             encoder.push_debug_group("pass");
@@ -714,10 +763,10 @@ impl RendererContext {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &target_view,
-                    resolve_target: None,
+                    view,
+                    resolve_target,
                     ops: Operations {
-                        load: load_op,
+                        load,
                         store: StoreOp::Store,
                     },
                 })],
@@ -726,7 +775,12 @@ impl RendererContext {
                 occlusion_query_set: None,
             });
 
-            pass.set_pipeline(&self.uber_render_pipeline);
+            if resolve_target.is_some() {
+                pass.set_pipeline(&self.uber_render_pipeline_msaa);
+            } else {
+                pass.set_pipeline(&self.uber_render_pipeline);
+            }
+
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint32);
 
@@ -877,7 +931,7 @@ async fn create_device(adapter: &Adapter) -> Result<(Device, Queue)> {
         .request_device(
             &DeviceDescriptor {
                 label: None,
-                required_features: Features::empty(),
+                required_features: Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                 required_limits: Limits::downlevel_defaults().using_resolution(adapter.limits()),
             },
             None,
@@ -1104,6 +1158,7 @@ fn create_uber_render_pipeline(
     device: &Device,
     layout: &PipelineLayout,
     shader_module: &ShaderModule,
+    samples: u32,
 ) -> RenderPipeline {
     device.create_render_pipeline(&RenderPipelineDescriptor {
         label: None,
@@ -1146,7 +1201,11 @@ fn create_uber_render_pipeline(
         },
         primitive: PrimitiveState::default(),
         depth_stencil: None,
-        multisample: MultisampleState::default(),
+        multisample: MultisampleState {
+            count: samples,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
         fragment: Some(FragmentState {
             module: shader_module,
             entry_point: "fs_main",
@@ -1234,7 +1293,7 @@ fn create_sampler(device: &Device) -> Sampler {
     })
 }
 
-fn create_draw_texture(device: &Device, width: u32, height: u32) -> Texture {
+fn create_draw_texture(device: &Device, width: u32, height: u32, samples: u32) -> Texture {
     device.create_texture(&TextureDescriptor {
         label: None,
         size: Extent3d {
@@ -1243,7 +1302,7 @@ fn create_draw_texture(device: &Device, width: u32, height: u32) -> Texture {
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
-        sample_count: 1,
+        sample_count: samples,
         dimension: TextureDimension::D2,
         format: TextureFormat::Rgba8UnormSrgb,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,

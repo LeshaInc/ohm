@@ -80,6 +80,7 @@ struct IntermediateAllocation {
 pub enum Target {
     Surface(SurfaceId),
     Intermediate(Intermediate),
+    IntermediateMsaa(Intermediate),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -548,7 +549,7 @@ impl Batcher<'_> {
         let intermediate_alloc = self.alloc_intermediate(intermediate, rect.size().as_uvec2());
 
         let old_target = self.cur_target;
-        self.cur_target = Target::Intermediate(intermediate);
+        self.cur_target = Target::IntermediateMsaa(intermediate);
 
         self.transform_stack.push(Affine2::IDENTITY);
         self.cur_clear = true;
