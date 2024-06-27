@@ -176,13 +176,26 @@ impl Batcher<'_> {
         }
     }
 
-    pub fn prepare(&mut self, _surface_size: UVec2, draw_list: &DrawList) {
+    pub fn prepare(&mut self, surface_size: UVec2, draw_list: &DrawList) {
         if draw_list.commands.is_empty() {
             return;
         }
 
-        self.cur_clear = false;
+        self.cur_clear = true;
+        self.cur_source = Source::White;
         self.cur_target = Target::Surface(draw_list.surface);
+        self.add_quad(Quad {
+            min: Vec2::ZERO,
+            max: surface_size.as_vec2(),
+            local_min: Vec2::ZERO,
+            local_max: Vec2::ZERO,
+            tex_min: Vec2::ZERO,
+            tex_max: Vec2::ZERO,
+            color: Vec4::ZERO,
+            instance_id: INSTANCE_FILL,
+        });
+        self.flush();
+
         self.dispatch_commands(draw_list.commands, Affine2::IDENTITY);
     }
 
@@ -274,8 +287,8 @@ impl Batcher<'_> {
     }
 
     fn get_valid_intermediate(&self) -> Intermediate {
-        match self.cur_source {
-            Source::Intermediate(Intermediate::A) => Intermediate::B,
+        match self.cur_target {
+            Target::Intermediate(Intermediate::A) => Intermediate::B,
             _ => Intermediate::A,
         }
     }
@@ -419,8 +432,16 @@ impl Batcher<'_> {
 
         let instance_id = self.add_instance(Instance {
             corner_radii: rect.corner_radii.into(),
-            border_color: rect.border.map(|b| b.color).unwrap_or(color).into(),
-            shadow_color: rect.shadow.map(|s| s.color).unwrap_or(color).into(),
+            border_color: rect
+                .border
+                .map(|b| b.color)
+                .unwrap_or(Color::TRANSPAENT)
+                .into(),
+            shadow_color: rect
+                .shadow
+                .map(|s| s.color)
+                .unwrap_or(Color::TRANSPAENT)
+                .into(),
             shadow_offset,
             size: rect.size,
             border_width: rect.border.map(|b| b.width).unwrap_or(0.0),
@@ -507,11 +528,17 @@ impl Batcher<'_> {
             return;
         }
 
-        let Some(rect) = self.compute_bouding_rect(layer.commands) else {
+        let Some(local_rect) = self.compute_bouding_rect(layer.commands) else {
             return;
         };
 
-        let mut rect = rect.transform(&layer.transform);
+        let layer_transform = self
+            .transform_stack
+            .last()
+            .map(|v| *v * layer.transform)
+            .unwrap_or(layer.transform);
+
+        let mut rect = local_rect.transform(&layer_transform);
         rect.min = rect.min.floor() - 1.0;
         rect.max = rect.max.ceil() + 1.0;
 
@@ -520,15 +547,15 @@ impl Batcher<'_> {
         let intermediate = self.get_valid_intermediate();
         let intermediate_alloc = self.alloc_intermediate(intermediate, rect.size().as_uvec2());
 
-        let translation = -rect.min + intermediate_alloc.rect.min.as_vec2();
-
         let old_target = self.cur_target;
         self.cur_target = Target::Intermediate(intermediate);
 
+        self.transform_stack.push(Affine2::IDENTITY);
         self.cur_clear = true;
+        self.cur_source = Source::White;
         self.add_quad(Quad {
-            min: rect.min,
-            max: rect.max,
+            min: intermediate_alloc.rect.min.as_vec2(),
+            max: intermediate_alloc.rect.max.as_vec2(),
             local_min: Vec2::ZERO,
             local_max: Vec2::ZERO,
             tex_min: Vec2::ZERO,
@@ -537,10 +564,13 @@ impl Batcher<'_> {
             instance_id: INSTANCE_FILL,
         });
         self.flush();
+        self.transform_stack.pop();
 
-        self.push_transform(Affine2::from_translation(translation));
-        self.dispatch_commands(layer.commands, layer.transform);
-        self.pop_transform();
+        self.transform_stack
+            .push(Affine2::from_translation(-rect.min) * layer_transform);
+
+        self.dispatch_commands(layer.commands, Affine2::IDENTITY);
+        self.transform_stack.pop();
 
         self.cur_target = old_target;
         self.cur_source = Source::White;
@@ -554,6 +584,7 @@ impl Batcher<'_> {
         self.cur_source = Source::White;
         self.cur_source = Source::Intermediate(intermediate);
 
+        self.transform_stack.push(Affine2::IDENTITY);
         self.add_quad(Quad {
             min: rect.min,
             max: rect.max,
@@ -564,6 +595,7 @@ impl Batcher<'_> {
             color: layer.tint.into(),
             instance_id: INSTANCE_FILL,
         });
+        self.transform_stack.pop();
 
         self.free_intermediate(intermediate_alloc);
     }

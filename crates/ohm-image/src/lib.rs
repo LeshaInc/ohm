@@ -29,23 +29,12 @@ impl ImageDecoder for ImageImageDecoder {
             return Err(Error::new(ErrorKind::InvalidImage, "unrecognized image"));
         };
 
-        let mut image = image::load_from_memory_with_format(data, format).map_err(|e| match e {
+        let image = image::load_from_memory_with_format(data, format).map_err(|e| match e {
             image::ImageError::IoError(e) => e.into(),
             _ => Error::wrap(ErrorKind::InvalidImage, e),
         })?;
 
-        if let Some(size) = size {
-            image = image.resize_exact(size.x, size.y, image::imageops::FilterType::Lanczos3);
-        }
-
-        let rgba_image = image.to_rgba8();
-        let data = rgba_image.into_raw();
-
-        Ok(ImageData {
-            format: ImageFormat::Srgba8,
-            size: UVec2::new(image.width(), image.height()),
-            data,
-        })
+        Ok(convert_image(image.to_rgba8(), size))
     }
 }
 
@@ -68,10 +57,20 @@ impl Rasterizer for EmbeddedImageRasterizer {
 
         let scale = size / (raster.pixels_per_em as f32);
 
-        let mut image = image::load_from_memory(raster.data).ok()?.into_rgba8();
-
+        let image = image::load_from_memory(raster.data).ok()?.into_rgba8();
         let old_size = UVec2::new(image.width(), image.height());
         let size = (old_size.as_vec2() * scale).as_uvec2();
+
+        Some(RasterizedGlyph {
+            image: convert_image(image, Some(size)),
+            offset: Vec2::new(raster.x as f32, -(raster.height as f32) - (raster.y as f32)) * scale,
+        })
+    }
+}
+
+fn convert_image(mut image: image::RgbaImage, size: Option<UVec2>) -> ImageData {
+    if let Some(size) = size {
+        let old_size = UVec2::new(image.width(), image.height());
 
         if size.cmplt(old_size).any() {
             image = image::imageops::resize(
@@ -81,15 +80,17 @@ impl Rasterizer for EmbeddedImageRasterizer {
                 image::imageops::FilterType::Lanczos3,
             );
         }
+    }
 
-        let data = image.into_raw();
-        Some(RasterizedGlyph {
-            image: ImageData {
-                format: ImageFormat::Srgba8,
-                size,
-                data,
-            },
-            offset: Vec2::new(raster.x as f32, -(raster.height as f32) - (raster.y as f32)) * scale,
-        })
+    for pixel in image.pixels_mut() {
+        pixel.0[0] = (u16::from(pixel.0[0]) * u16::from(pixel.0[3]) / 255) as u8;
+        pixel.0[1] = (u16::from(pixel.0[1]) * u16::from(pixel.0[3]) / 255) as u8;
+        pixel.0[2] = (u16::from(pixel.0[2]) * u16::from(pixel.0[3]) / 255) as u8;
+    }
+
+    ImageData {
+        format: ImageFormat::Srgba8,
+        size: UVec2::new(image.width(), image.height()),
+        data: image.into_raw(),
     }
 }

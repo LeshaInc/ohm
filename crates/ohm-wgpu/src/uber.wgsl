@@ -68,16 +68,12 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var base_color = textureSample(texture, texture_sampler, in.tex);
 
-    base_color.r *= base_color.a;
-    base_color.g *= base_color.a;
-    base_color.b *= base_color.a;
+    if in.instance_id == 4294967294u {
+        return in.color * base_color.r;
+    }
 
     if in.instance_id == 4294967295u {
         return in.color * base_color;
-    }
-
-    if in.instance_id == 4294967294u {
-        return in.color * base_color.r;
     }
 
     let rect = rect_instances.arr[in.instance_id];
@@ -86,12 +82,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let dist = sdf_rounded_rect(pos, rect.size / 2.0, rect.corner_radii);
     let dist_change = fwidth(dist) * 0.5;
-    
     let mask = smoothstep(dist_change, -dist_change, dist);
-    let border_mask = smoothstep(dist_change, -dist_change, dist + rect.border_width);
-    var color = mix(rect.border_color, in.color * base_color, border_mask);
 
-    if rect.shadow_color.a > 0.0 {
+    var color = in.color * base_color;
+    if rect.border_width > 0.001 {
+        let border_mask = smoothstep(dist_change, -dist_change, dist + rect.border_width);
+        color = mix(rect.border_color, color, border_mask);
+    }
+
+    if rect.shadow_color.a > 0.001 {
         let size = rect.size / 2.0 + rect.shadow_spread_radius;
         var radii = rect.corner_radii;
         radii += sign(radii) * rect.shadow_spread_radius;

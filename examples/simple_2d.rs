@@ -34,7 +34,8 @@ impl ApplicationHandler for App {
             .create_window(
                 WindowAttributes::default()
                     .with_title("ohm example")
-                    .with_inner_size(PhysicalSize::new(800, 600)),
+                    .with_inner_size(PhysicalSize::new(800, 600))
+                    .with_transparent(true),
             )
             .map(Arc::new)
             .unwrap();
