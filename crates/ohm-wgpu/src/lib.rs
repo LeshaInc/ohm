@@ -5,8 +5,8 @@ use std::sync::Arc;
 use ohm_core::image::{ImageData, ImageFormat};
 use ohm_core::math::{URect, UVec2, Vec2, Vec4};
 use ohm_core::renderer::{
-    Batcher, BatcherScratch, Instance as BatcherInstance, Intermediate, Renderer, Source,
-    SurfaceId, Target, Vertex, WindowHandle,
+    Batcher, BatcherScratch, Instance as BatcherInstance, Renderer, Source, SurfaceId, Target,
+    Vertex, WindowHandle,
 };
 use ohm_core::texture::{MipmapMode, TextureCache, TextureCommand, TextureId};
 use ohm_core::{DrawList, Error, ErrorKind, Result};
@@ -130,6 +130,13 @@ self_cell! {
 }
 
 #[derive(Debug)]
+struct IntermediateEntry {
+    size: UVec2,
+    texture_view: TextureView,
+    texture_view_msaa: Option<TextureView>,
+}
+
+#[derive(Debug)]
 struct RendererContext {
     batcher_scratch: BatcherScratch,
     adapter: Adapter,
@@ -147,9 +154,7 @@ struct RendererContext {
     blit_render_pipelines: HashMap<TextureFormat, RenderPipeline>,
     textures: HashMap<TextureId, TextureEntry>,
     white_texture_view: TextureView,
-    intermediate_texture_views: [TextureView; 2],
-    intermediate_texture_views_msaa: [TextureView; 2],
-    intermediate_texture_sizes: [UVec2; 2],
+    intermediates: Vec<IntermediateEntry>,
     sampler: Sampler,
     surfaces: SlotMap<SurfaceId, SurfaceEntry>,
     to_present: Vec<SurfaceTexture>,
@@ -212,22 +217,6 @@ impl RendererContext {
         let white_texture_view = create_white_texture_view(&device, &queue);
         let sampler = create_sampler(&device);
 
-        let size = UVec2::new(256, 256);
-
-        let intermediate_texture_views = [
-            create_draw_texture(&device, size.x, size.y, 1).create_view(&Default::default()),
-            create_draw_texture(&device, size.x, size.y, 1).create_view(&Default::default()),
-        ];
-
-        let intermediate_texture_views_msaa = [
-            create_draw_texture(&device, size.x, size.y, msaa_samples)
-                .create_view(&Default::default()),
-            create_draw_texture(&device, size.x, size.y, msaa_samples)
-                .create_view(&Default::default()),
-        ];
-
-        let intermediate_texture_sizes = [size, size];
-
         Ok(RendererContext {
             batcher_scratch: BatcherScratch::default(),
             adapter,
@@ -245,9 +234,7 @@ impl RendererContext {
             blit_render_pipelines,
             textures: HashMap::default(),
             white_texture_view,
-            intermediate_texture_views,
-            intermediate_texture_views_msaa,
-            intermediate_texture_sizes,
+            intermediates: Vec::new(),
             sampler,
             surfaces: SlotMap::default(),
             to_present: Vec::new(),
@@ -676,19 +663,40 @@ impl RendererContext {
             batcher.prepare(list);
         }
 
-        for intermediate in [Intermediate::A, Intermediate::B] {
-            let size = batcher.intermediate_size(intermediate);
-            if size == self.intermediate_texture_sizes[intermediate as usize] {
+        for (i, intermediate) in batcher.intermediates().iter().enumerate() {
+            let size = intermediate.size;
+
+            if self.intermediates.get(i).is_some_and(|v| {
+                v.size == size
+                    && v.texture_view_msaa.is_some() == (intermediate.msaa && self.msaa_samples > 1)
+            }) {
                 continue;
             }
 
-            self.intermediate_texture_views[intermediate as usize] =
-                create_draw_texture(&self.device, size.x, size.y, 1)
-                    .create_view(&Default::default());
-            self.intermediate_texture_views_msaa[intermediate as usize] =
-                create_draw_texture(&self.device, size.x, size.y, self.msaa_samples)
-                    .create_view(&Default::default());
-            self.intermediate_texture_sizes[intermediate as usize] = size;
+            let entry = if intermediate.msaa && self.msaa_samples > 1 {
+                IntermediateEntry {
+                    size: intermediate.size,
+                    texture_view: create_draw_texture(&self.device, size.x, size.y, 1)
+                        .create_view(&Default::default()),
+                    texture_view_msaa: Some(
+                        create_draw_texture(&self.device, size.x, size.y, self.msaa_samples)
+                            .create_view(&Default::default()),
+                    ),
+                }
+            } else {
+                IntermediateEntry {
+                    size: intermediate.size,
+                    texture_view: create_draw_texture(&self.device, size.x, size.y, 1)
+                        .create_view(&Default::default()),
+                    texture_view_msaa: None,
+                }
+            };
+
+            if let Some(v) = self.intermediates.get_mut(i) {
+                *v = entry;
+            } else {
+                self.intermediates.push(entry);
+            }
         }
 
         let vertex_buffer = create_vertex_buffer(&self.device, batcher.vertices());
@@ -705,9 +713,8 @@ impl RendererContext {
                             let config = &self.surfaces[id].config;
                             UVec2::new(config.width, config.height).as_vec2()
                         }
-                        Target::Intermediate(intermediate)
-                        | Target::IntermediateMsaa(intermediate) => {
-                            self.intermediate_texture_sizes[intermediate as usize].as_vec2()
+                        Target::Intermediate(intermediate) => {
+                            self.intermediates[intermediate.0].size.as_vec2()
                         }
                     };
 
@@ -721,7 +728,7 @@ impl RendererContext {
                             .map(|t| &t.view)
                             .unwrap_or(&self.white_texture_view),
                         Source::Intermediate(intermediate) => {
-                            &self.intermediate_texture_views[intermediate as usize]
+                            &self.intermediates[intermediate.0 as usize].texture_view
                         }
                     };
 
@@ -754,18 +761,27 @@ impl RendererContext {
                     &self.surfaces[id].texture_view
                 }
                 Target::Intermediate(intermediate) => {
-                    &self.intermediate_texture_views[intermediate as usize]
-                }
-                Target::IntermediateMsaa(intermediate) => {
-                    &self.intermediate_texture_views_msaa[intermediate as usize]
+                    let intermediate = &self.intermediates[intermediate.0 as usize];
+                    intermediate
+                        .texture_view_msaa
+                        .as_ref()
+                        .unwrap_or(&intermediate.texture_view)
                 }
             };
 
-            let resolve_target = match batch.target {
-                Target::IntermediateMsaa(intermediate) => {
-                    Some(&self.intermediate_texture_views[intermediate as usize])
+            let (is_msaa, resolve_target) = match batch.target {
+                Target::Intermediate(intermediate) => {
+                    let intermediate = &self.intermediates[intermediate.0 as usize];
+                    if intermediate.texture_view_msaa.is_some() {
+                        (
+                            true,
+                            Some(&intermediate.texture_view).filter(|_| batch.msaa_resolve),
+                        )
+                    } else {
+                        (false, None)
+                    }
                 }
-                _ => None,
+                _ => (false, None),
             };
 
             encoder.push_debug_group("pass");
@@ -785,7 +801,7 @@ impl RendererContext {
                 occlusion_query_set: None,
             });
 
-            let pipeline = if resolve_target.is_some() {
+            let pipeline = if is_msaa {
                 if batch.clear {
                     &self.uber_render_pipeline_noblend_msaa
                 } else {

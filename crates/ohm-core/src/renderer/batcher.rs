@@ -1,13 +1,10 @@
 use std::fmt;
 use std::ops::Range;
 
-use glam::Affine2;
-use guillotiere::{AllocId, AtlasAllocator};
-
 use super::path_cache::{Mesh, PathCache};
 use super::SurfaceId;
 use crate::image::ImageFormat;
-use crate::math::{Rect, URect, UVec2, Vec2, Vec4};
+use crate::math::{Affine2, Rect, UVec2, Vec2, Vec4};
 use crate::text::{GlyphKey, SubpixelBin};
 use crate::texture::{TextureCache, TextureId};
 use crate::{
@@ -59,6 +56,7 @@ pub struct FramebufferId(pub u64);
 #[derive(Debug)]
 pub struct Batch {
     pub clear: bool,
+    pub msaa_resolve: bool,
     pub target: Target,
     pub source: Source,
     pub index_range: Range<u32>,
@@ -67,31 +65,25 @@ pub struct Batch {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-#[repr(u8)]
-pub enum Intermediate {
-    A,
-    B,
+pub struct Intermediate {
+    pub size: UVec2,
+    pub msaa: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct IntermediateAllocation {
-    intermediate: Intermediate,
-    alloc_id: AllocId,
-    rect: URect,
-}
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct IntermediateId(pub usize);
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Target {
     Surface(SurfaceId),
-    Intermediate(Intermediate),
-    IntermediateMsaa(Intermediate),
+    Intermediate(IntermediateId),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Source {
     White,
     Texture(TextureId),
-    Intermediate(Intermediate),
+    Intermediate(IntermediateId),
 }
 
 pub struct BatcherScratch {
@@ -100,7 +92,7 @@ pub struct BatcherScratch {
     instances: Vec<Instance>,
     batches: Vec<Batch>,
     transform_stack: Vec<Affine2>,
-    intermediate_allocators: [AtlasAllocator; 2],
+    intermediates: Vec<Intermediate>,
     path_cache: PathCache,
 }
 
@@ -115,6 +107,7 @@ impl BatcherScratch {
         self.instances.clear();
         self.batches.clear();
         self.transform_stack.clear();
+        self.intermediates.clear();
     }
 }
 
@@ -126,10 +119,7 @@ impl Default for BatcherScratch {
             instances: Vec::new(),
             batches: Vec::new(),
             transform_stack: Vec::new(),
-            intermediate_allocators: [
-                AtlasAllocator::new(guillotiere_size2d(UVec2::new(256, 256))),
-                AtlasAllocator::new(guillotiere_size2d(UVec2::new(256, 256))),
-            ],
+            intermediates: Vec::new(),
             path_cache: PathCache::new(),
         }
     }
@@ -148,7 +138,7 @@ pub struct Batcher<'a> {
     instances: &'a mut Vec<Instance>,
     batches: &'a mut Vec<Batch>,
     transform_stack: &'a mut Vec<Affine2>,
-    intermediate_allocators: &'a mut [AtlasAllocator; 2],
+    intermediates: &'a mut Vec<Intermediate>,
     path_cache: &'a mut PathCache,
     cur_clear: bool,
     cur_target: Target,
@@ -173,10 +163,10 @@ impl Batcher<'_> {
             instances: &mut scratch.instances,
             batches: &mut scratch.batches,
             transform_stack: &mut scratch.transform_stack,
-            intermediate_allocators: &mut scratch.intermediate_allocators,
+            intermediates: &mut scratch.intermediates,
             path_cache: &mut scratch.path_cache,
             cur_clear: false,
-            cur_target: Target::Intermediate(Intermediate::A),
+            cur_target: Target::Intermediate(IntermediateId(0)),
             cur_source: Source::White,
             max_instances_per_buffer,
             cur_instance_buffer_id: 0,
@@ -195,7 +185,7 @@ impl Batcher<'_> {
         if self.should_enable_msaa(draw_list.commands) {
             self.draw_intermediate_layer(draw_list.commands, Color::WHITE, Affine2::IDENTITY, true);
         } else {
-            self.dispatch_commands(draw_list.commands, Affine2::IDENTITY);
+            self.dispatch_commands(draw_list.commands);
         }
 
         self.flush();
@@ -217,9 +207,8 @@ impl Batcher<'_> {
         self.instances
     }
 
-    pub fn intermediate_size(&self, intermediate: Intermediate) -> UVec2 {
-        let size = self.intermediate_allocators[intermediate as usize].size();
-        UVec2::new(size.width as u32, size.height as u32)
+    pub fn intermediates(&self) -> &[Intermediate] {
+        &self.intermediates
     }
 
     fn compute_bouding_rect(&mut self, commands: &[Command]) -> Option<Rect> {
@@ -326,80 +315,13 @@ impl Batcher<'_> {
         self.transform_stack.pop();
     }
 
-    fn get_valid_intermediate(&self) -> Intermediate {
-        match self.cur_target {
-            Target::Intermediate(Intermediate::A) => Intermediate::B,
-            _ => Intermediate::A,
-        }
+    fn alloc_intermediate(&mut self, size: UVec2, msaa: bool) -> IntermediateId {
+        self.intermediates.push(Intermediate { size, msaa });
+        IntermediateId(self.intermediates.len() - 1)
     }
 
-    fn alloc_intermediate(
-        &mut self,
-        intermediate: Intermediate,
-        size: UVec2,
-    ) -> IntermediateAllocation {
-        let allocator = &mut self.intermediate_allocators[intermediate as usize];
-
-        let old_size = allocator.size().to_f32();
-
-        let alloc = loop {
-            match allocator.allocate(guillotiere_size2d(size)) {
-                Some(alloc) => break alloc,
-                None => {
-                    allocator.grow(allocator.size() * 2);
-                }
-            }
-        };
-
-        let new_size = allocator.size().to_f32();
-        if old_size != new_size {
-            let factor = Vec2::new(
-                old_size.width / new_size.width,
-                old_size.height / new_size.height,
-            );
-            self.rescale_intermediate_tex_coords(intermediate, factor);
-        }
-
-        IntermediateAllocation {
-            intermediate,
-            alloc_id: alloc.id,
-            rect: URect::new(
-                UVec2::new(alloc.rectangle.min.x as u32, alloc.rectangle.min.y as u32),
-                UVec2::new(alloc.rectangle.max.x as u32, alloc.rectangle.max.y as u32),
-            ),
-        }
-    }
-
-    fn rescale_intermediate_tex_coords(&mut self, intermediate: Intermediate, factor: Vec2) {
-        for batch in self.batches.iter_mut() {
-            if batch.source != Source::Intermediate(intermediate) {
-                continue;
-            }
-
-            for index in batch.vertex_range.clone() {
-                let vertex = &mut self.vertices[index as usize];
-                vertex.tex = vertex.tex * factor;
-            }
-        }
-
-        if self.cur_source == Source::Intermediate(intermediate) {
-            for vertex in &mut self.vertices[self.last_vertex as usize..] {
-                vertex.tex = vertex.tex * factor;
-            }
-        }
-    }
-
-    fn free_intermediate(&mut self, alloc: IntermediateAllocation) {
-        let allocator = &mut self.intermediate_allocators[alloc.intermediate as usize];
-        allocator.deallocate(alloc.alloc_id);
-    }
-
-    fn dispatch_commands(&mut self, commands: &[Command<'_>], transform: Affine2) -> Range<usize> {
+    fn dispatch_commands(&mut self, commands: &[Command<'_>]) -> Range<usize> {
         let first_batch = self.batches.len();
-
-        if transform != Affine2::IDENTITY {
-            self.push_transform(transform);
-        }
 
         for &command in commands {
             match command {
@@ -410,10 +332,6 @@ impl Batcher<'_> {
                 Command::FillPath(path) => self.cmd_fill_path(&path),
                 Command::StrokePath(path) => self.cmd_stroke_path(&path),
             }
-        }
-
-        if transform != Affine2::IDENTITY {
-            self.pop_transform();
         }
 
         self.flush();
@@ -560,7 +478,16 @@ impl Batcher<'_> {
         let is_fast_path = is_no_tint && is_compatible_scissor;
 
         if is_fast_path {
-            self.dispatch_commands(layer.commands, layer.transform);
+            if layer.transform != Affine2::IDENTITY {
+                self.push_transform(layer.transform);
+            }
+
+            self.dispatch_commands(layer.commands);
+
+            if layer.transform != Affine2::IDENTITY {
+                self.pop_transform();
+            }
+
             return;
         }
 
@@ -591,34 +518,34 @@ impl Batcher<'_> {
 
         self.flush();
 
-        let intermediate = self.get_valid_intermediate();
-        let intermediate_alloc = self.alloc_intermediate(intermediate, rect.size().as_uvec2());
+        let intermediate = self.alloc_intermediate(rect.size().as_uvec2(), enable_msaa);
 
         let old_target = self.cur_target;
-        self.set_target(if enable_msaa {
-            Target::IntermediateMsaa(intermediate)
-        } else {
-            Target::Intermediate(intermediate)
-        });
+        self.set_target(Target::Intermediate(intermediate));
 
         self.transform_stack.push(Affine2::IDENTITY);
         self.cmd_clear_rect(ClearRect {
-            pos: intermediate_alloc.rect.min.as_vec2(),
-            size: intermediate_alloc.rect.size().as_vec2(),
+            pos: Vec2::ZERO,
+            size: rect.size(),
             color: Color::TRANSPAENT,
         });
         self.transform_stack.pop();
 
         self.transform_stack
             .push(Affine2::from_translation(-rect.min) * layer_transform);
-        self.dispatch_commands(commands, Affine2::IDENTITY);
+        self.dispatch_commands(commands);
         self.transform_stack.pop();
 
-        let tex_size = self.intermediate_allocators[intermediate as usize].size();
-        let tex_size = Vec2::new(tex_size.width as f32, tex_size.height as f32);
+        self.flush();
 
-        let tex_min = intermediate_alloc.rect.min.as_vec2() / tex_size;
-        let tex_max = intermediate_alloc.rect.max.as_vec2() / tex_size;
+        if enable_msaa {
+            for batch in self.batches.iter_mut().rev() {
+                if batch.target == Target::Intermediate(intermediate) {
+                    batch.msaa_resolve = true;
+                    break;
+                }
+            }
+        }
 
         self.set_target(old_target);
         self.set_source(Source::Intermediate(intermediate));
@@ -629,14 +556,12 @@ impl Batcher<'_> {
             max: rect.max,
             local_min: Vec2::ZERO,
             local_max: Vec2::ZERO,
-            tex_min,
-            tex_max,
+            tex_min: Vec2::ZERO,
+            tex_max: Vec2::ONE,
             color: tint.into(),
             instance_id: INSTANCE_FILL,
         });
         self.transform_stack.pop();
-
-        self.free_intermediate(intermediate_alloc);
     }
 
     fn cmd_fill_path(&mut self, path: &FillPath<'_>) {
@@ -748,6 +673,7 @@ impl Batcher<'_> {
 
         self.batches.push(Batch {
             clear: self.cur_clear,
+            msaa_resolve: false,
             target: self.cur_target,
             source: self.cur_source,
             index_range,
@@ -840,8 +766,4 @@ impl fmt::Debug for Batcher<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Batcher").finish_non_exhaustive()
     }
-}
-
-fn guillotiere_size2d(size: UVec2) -> guillotiere::Size {
-    guillotiere::Size::new(size.x as i32, size.y as i32)
 }
