@@ -51,6 +51,10 @@ impl Graphics {
         self.image_decoders
             .add_decoder(ohm_image::ImageImageDecoder);
 
+        #[cfg(feature = "resvg")]
+        self.image_decoders
+            .add_decoder(ohm_resvg::ResvgImageDecoder);
+
         #[cfg(feature = "image")]
         self.font_rasterizers
             .add_rasterizer(ohm_image::EmbeddedImageRasterizer);

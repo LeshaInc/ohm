@@ -11,6 +11,7 @@ ohm-core = { path = "crates/ohm-core", version = "0.1.0" }
 ohm-fontdb = { path = "crates/ohm-fontdb", version = "0.1.0" }
 ohm-freetype = { path = "crates/ohm-freetype", version = "0.1.0" }
 ohm-image = { path = "crates/ohm-image", version = "0.1.0" }
+ohm-resvg = { path = "crates/ohm-resvg", version = "0.1.0" }
 ohm-rustybuzz = { path = "crates/ohm-rustybuzz", version = "0.1.0" }
 ohm-wgpu = { path = "crates/ohm-wgpu", version = "0.1.0" }
 ohm-zeno = { path = "crates/ohm-zeno", version = "0.1.0" }
@@ -27,6 +28,7 @@ lru = "0.12.3"
 lyon_tessellation = "1.0"
 pollster = "0.3.0"
 raw-window-handle = "0.6.2"
+resvg = { version = "0.42.0", default-features = false }
 rustybuzz = "0.14.1"
 self_cell = "1.0"
 slotmap = "1.0"

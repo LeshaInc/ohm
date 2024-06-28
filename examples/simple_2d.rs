@@ -107,6 +107,10 @@ fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
         .image_clip_rect(Rect::new(vec2(0.25, 0.5), vec2(0.5, 0.75)))
         .corner_radii(16.0)
         .border(Color::BLACK, 2.0);
+
+    encoder
+        .rect(vec2(120.0, 120.0), vec2(100.0, 100.0))
+        .image_path("file:rust-logo-blk.svg");
 }
 
 struct AppState {

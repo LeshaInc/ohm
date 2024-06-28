@@ -527,7 +527,7 @@ struct TextureAtlas {
 }
 
 impl TextureAtlas {
-    const MIN_SIZE: u32 = 1024;
+    const MIN_SIZE: u32 = 512;
     const MAX_SIZE: u32 = 4096;
 
     fn new(

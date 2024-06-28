@@ -1,0 +1,9 @@
+[package]
+name = "ohm-resvg"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ohm-core.workspace = true
+
+resvg.workspace = true

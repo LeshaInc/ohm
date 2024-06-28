@@ -420,7 +420,6 @@ impl RendererContext {
 
     fn texture_cmd_copy(
         &mut self,
-        encoder: &mut CommandEncoder,
         src_id: TextureId,
         dst_id: TextureId,
         src_rect: URect,
@@ -429,6 +428,8 @@ impl RendererContext {
         let size = src_rect.size();
         let src_texture = &self.textures[&src_id].texture;
         let dst_texture = &self.textures[&dst_id].texture;
+
+        let mut encoder = self.device.create_command_encoder(&Default::default());
 
         encoder.copy_texture_to_texture(
             ImageCopyTexture {
@@ -459,6 +460,8 @@ impl RendererContext {
         );
 
         self.texture_mark_mipmaps_dirty(dst_id);
+
+        self.queue.submit(std::iter::once(encoder.finish()));
     }
 
     fn texture_cmd_write(&mut self, dst_id: TextureId, dst_rect: URect, data: ImageData) {
@@ -584,9 +587,6 @@ impl RendererContext {
             return;
         }
 
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.push_debug_group("ohm-textures");
-
         for command in commands.drain(..) {
             match command {
                 TextureCommand::CreateStatic {
@@ -612,7 +612,7 @@ impl RendererContext {
                     src_rect,
                     dst_rect,
                 } => {
-                    self.texture_cmd_copy(&mut encoder, src_id, dst_id, src_rect, dst_rect);
+                    self.texture_cmd_copy(src_id, dst_id, src_rect, dst_rect);
                 }
 
                 TextureCommand::Write {
@@ -646,16 +646,14 @@ impl RendererContext {
         }
 
         if !to_update.is_empty() {
+            let mut encoder = self.device.create_command_encoder(&Default::default());
             encoder.push_debug_group("mipmaps");
             for id in to_update {
                 self.texture_generate_mipmaps(&mut encoder, id);
             }
             encoder.pop_debug_group();
+            self.queue.submit(std::iter::once(encoder.finish()));
         }
-
-        encoder.pop_debug_group();
-
-        self.queue.submit(std::iter::once(encoder.finish()));
     }
 
     fn render(

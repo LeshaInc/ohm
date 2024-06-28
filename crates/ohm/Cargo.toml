@@ -9,6 +9,7 @@ ohm-core.workspace = true
 ohm-fontdb = { workspace = true, optional = true }
 ohm-freetype = { workspace = true, optional = true }
 ohm-image = { workspace = true, optional = true }
+ohm-resvg = { workspace = true, optional = true }
 ohm-rustybuzz = { workspace = true, optional = true }
 ohm-wgpu = { workspace = true, optional = true }
 ohm-zeno = { workspace = true, optional = true }
@@ -27,14 +28,16 @@ default = [
   "image",
   "image/jpeg",
   "image/png",
+  "resvg",
   "rustybuzz",
   "wgpu",
-  "zeno"
+  "zeno",
 ]
 
 fontdb = ["dep:ohm-fontdb"]
 freetype = ["dep:ohm-freetype"]
 image = ["dep:ohm-image", "dep:image"]
+resvg = ["dep:ohm-resvg"]
 rustybuzz = ["dep:ohm-rustybuzz"]
 wgpu = ["dep:ohm-wgpu"]
 zeno = ["dep:ohm-zeno"]
