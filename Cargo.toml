@@ -16,6 +16,7 @@ ohm-wgpu = { path = "crates/ohm-wgpu", version = "0.1.0" }
 ohm-zeno = { path = "crates/ohm-zeno", version = "0.1.0" }
 
 bumpalo = { version = "3.16", features = ["collections"] }
+crossbeam-queue = "0.3.11"
 encase = { version = "0.9.0", features = ["glam"] }
 fontdb = "0.18.0"
 freetype-rs = "0.37.0"

@@ -1,10 +1,35 @@
 use std::fmt;
+use std::sync::Arc;
+
+use crossbeam_queue::SegQueue;
 
 use crate::math::UVec2;
 use crate::{Error, ErrorKind, Result};
 
 slotmap::new_key_type! {
     pub struct ImageId;
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageHandle {
+    id: ImageId,
+    cleanup_queue: Arc<SegQueue<ImageId>>,
+}
+
+impl ImageHandle {
+    pub(crate) fn new(id: ImageId, cleanup_queue: Arc<SegQueue<ImageId>>) -> ImageHandle {
+        ImageHandle { id, cleanup_queue }
+    }
+
+    pub fn id(&self) -> ImageId {
+        self.id
+    }
+}
+
+impl Drop for ImageHandle {
+    fn drop(&mut self) {
+        self.cleanup_queue.push(self.id);
+    }
 }
 
 #[derive(Clone)]

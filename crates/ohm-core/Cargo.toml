@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+crossbeam-queue.workspace = true
 glam.workspace = true
 guillotiere.workspace = true
 lru.workspace = true

@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
+use crossbeam_queue::SegQueue;
 use guillotiere::{AllocId, AtlasAllocator};
 use slotmap::SlotMap;
 
 use crate::asset::{AssetPath, AssetSource};
-use crate::image::{ImageData, ImageDecoder, ImageFormat};
+use crate::image::{ImageData, ImageDecoder, ImageFormat, ImageHandle};
 use crate::math::{URect, UVec2, Vec2};
 use crate::text::{FontDatabase, GlyphKey, Rasterizer, SubpixelBin};
 use crate::{Command, DrawList, Error, ErrorKind, ImageId, Result};
@@ -59,11 +61,11 @@ pub struct TextureCache {
     glyphs: HashMap<GlyphKey, GlyphEntry>,
     atlases: TextureAtlasPool,
     id_allocator: TextureIdAllocator,
+    image_cleanup_queue: Arc<SegQueue<ImageId>>,
 }
 
 #[derive(Debug, Clone)]
 struct ImageEntry {
-    used: bool,
     path: Option<AssetPath<'static>>,
     data: Option<ImageData>,
     mipmap_mode: MipmapMode,
@@ -104,28 +106,39 @@ impl TextureCache {
         TextureCache::default()
     }
 
-    pub fn add_image(&mut self, data: ImageData, mipmap_mode: MipmapMode) -> ImageId {
-        self.images.insert(ImageEntry {
-            used: true,
+    pub fn add_image(&mut self, data: ImageData, mipmap_mode: MipmapMode) -> ImageHandle {
+        let id = self.images.insert(ImageEntry {
             path: None,
             data: Some(data),
             mipmap_mode,
             texture: None,
             rect: URect::ZERO,
             alloc_id: None,
-        })
+        });
+
+        ImageHandle::new(id, self.image_cleanup_queue.clone())
     }
 
-    pub fn add_image_by_path(&mut self, path: AssetPath<'_>, mipmap_mode: MipmapMode) -> ImageId {
+    pub fn add_image_from_path<'a>(
+        &mut self,
+        path: impl Into<AssetPath<'a>>,
+        mipmap_mode: MipmapMode,
+    ) -> ImageHandle {
+        self.add_image_from_path_inner(path.into().into_owned(), mipmap_mode)
+    }
+
+    fn add_image_from_path_inner(
+        &mut self,
+        path: AssetPath<'static>,
+        mipmap_mode: MipmapMode,
+    ) -> ImageHandle {
         if let Some(&id) = self.images_by_path.get(&path) {
-            self.images[id].used = true;
-            return id;
+            return ImageHandle::new(id, self.image_cleanup_queue.clone());
         }
 
         let path = path.into_owned();
 
         let id = self.images.insert(ImageEntry {
-            used: true,
             path: Some(path.clone()),
             data: None,
             mipmap_mode,
@@ -136,7 +149,7 @@ impl TextureCache {
 
         self.images_by_path.insert(path, id);
 
-        id
+        ImageHandle::new(id, self.image_cleanup_queue.clone())
     }
 
     pub fn add_glyph(&mut self, key: GlyphKey) {
@@ -170,10 +183,6 @@ impl TextureCache {
                 _ => (),
             }
         }
-    }
-
-    pub fn mark_image_used(&mut self, id: ImageId) {
-        self.images[id].used = true;
     }
 
     pub fn load_images(
@@ -307,10 +316,10 @@ impl TextureCache {
     }
 
     pub fn cleanup(&mut self, commands: &mut Vec<TextureCommand>) {
-        self.images.retain(|_, image| {
-            if image.used {
-                return true;
-            }
+        while let Some(image_id) = self.image_cleanup_queue.pop() {
+            let Some(image) = self.images.remove(image_id) else {
+                continue;
+            };
 
             if let Some(alloc_id) = image.alloc_id {
                 self.atlases.free(alloc_id);
@@ -321,9 +330,7 @@ impl TextureCache {
             if let Some(path) = &image.path {
                 self.images_by_path.remove(path);
             }
-
-            false
-        });
+        }
 
         self.glyphs.retain(|_, glyph| {
             if glyph.used {

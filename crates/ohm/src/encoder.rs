@@ -2,6 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
+use ohm_core::image::ImageHandle;
 use ohm_core::{StrokeOptions, StrokePath};
 
 use crate::asset::AssetPath;
@@ -164,12 +165,16 @@ impl RectBuilder<'_, '_, '_> {
         self
     }
 
+    pub fn image(self, image: &ImageHandle) -> Self {
+        self.image_id(image.id())
+    }
+
     pub fn image_path<'a>(self, image: impl Into<AssetPath<'a>>) -> Self {
         let image = self
             .encoder
             .texture_cache
-            .add_image_by_path(image.into(), MipmapMode::Enabled);
-        self.image_id(image)
+            .add_image_from_path(image, MipmapMode::Enabled);
+        self.image_id(image.id())
     }
 
     pub fn image_id(mut self, image: ImageId) -> Self {
@@ -245,12 +250,16 @@ impl FillPathBuilder<'_, '_, '_> {
         self
     }
 
+    pub fn image(self, image: &ImageHandle) -> Self {
+        self.image_id(image.id())
+    }
+
     pub fn image_path<'a>(self, image: impl Into<AssetPath<'a>>) -> Self {
         let image = self
             .encoder
             .texture_cache
-            .add_image_by_path(image.into(), MipmapMode::Enabled);
-        self.image_id(image)
+            .add_image_from_path(image, MipmapMode::Enabled);
+        self.image_id(image.id())
     }
 
     pub fn image_id(mut self, image: ImageId) -> Self {

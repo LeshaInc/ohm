@@ -5,6 +5,7 @@ use ohm::asset::FileAssetSource;
 use ohm::math::{vec2, Affine2, URect, UVec2, Vec2};
 use ohm::renderer::SurfaceId;
 use ohm::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
+use ohm::texture::MipmapMode;
 use ohm::{Color, Encoder, EncoderScratch, Graphics, PathBuilder, Shadow};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -96,9 +97,13 @@ fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
         .image_path("file:kitten.jpg")
         .corner_radii(16.0);
 
+    let image = encoder
+        .texture_cache
+        .add_image_from_path("file:kitten.jpg", MipmapMode::Enabled);
+
     encoder
         .rect(vec2(800.0, 700.0), vec2(100.0, 100.0))
-        .image_path("file:kitten.jpg")
+        .image(&image)
         .image_clip_rect(URect::new(UVec2::new(200, 200), UVec2::new(300, 300)))
         .corner_radii(16.0)
         .border(Color::BLACK, 2.0);
@@ -131,8 +136,8 @@ impl ApplicationHandler for App {
 
         let mut graphics = Graphics::new_wgpu();
 
-        let mut path = PathBuf::from(file!());
-        path.pop();
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../examples");
         graphics
             .asset_sources
             .add_source("file", FileAssetSource::new(path).unwrap());
