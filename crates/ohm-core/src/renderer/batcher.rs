@@ -1,8 +1,7 @@
 use std::fmt;
 use std::ops::Range;
 
-use super::path_cache::{Mesh, PathCache};
-use super::SurfaceId;
+use super::{Mesh, PathCache, SurfaceId};
 use crate::image::ImageFormat;
 use crate::math::{Affine2, Rect, UVec2, Vec2, Vec4};
 use crate::text::{GlyphKey, SubpixelBin};
@@ -93,7 +92,6 @@ pub struct BatcherScratch {
     batches: Vec<Batch>,
     transform_stack: Vec<Affine2>,
     intermediates: Vec<Intermediate>,
-    path_cache: PathCache,
 }
 
 impl BatcherScratch {
@@ -120,7 +118,6 @@ impl Default for BatcherScratch {
             batches: Vec::new(),
             transform_stack: Vec::new(),
             intermediates: Vec::new(),
-            path_cache: PathCache::new(),
         }
     }
 }
@@ -153,6 +150,7 @@ impl Batcher<'_> {
     pub fn new<'a>(
         scratch: &'a mut BatcherScratch,
         texture_cache: &'a TextureCache,
+        path_cache: &'a mut PathCache,
         max_instances_per_buffer: usize,
     ) -> Batcher<'a> {
         scratch.clear();
@@ -164,7 +162,7 @@ impl Batcher<'_> {
             batches: &mut scratch.batches,
             transform_stack: &mut scratch.transform_stack,
             intermediates: &mut scratch.intermediates,
-            path_cache: &mut scratch.path_cache,
+            path_cache,
             cur_clear: false,
             cur_target: Target::Intermediate(IntermediateId(0)),
             cur_source: Source::White,
@@ -644,14 +642,14 @@ impl Batcher<'_> {
                 .map(|image| {
                     let (tex_min, tex_max) = match fill.clip_rect {
                         Some(clip) => (
-                            (image.rect.min + clip.min).min(image.rect.max),
-                            (image.rect.min + clip.max).min(image.rect.max),
+                            image.rect.min.as_vec2() + clip.min * image.rect.size().as_vec2(),
+                            image.rect.min.as_vec2() + clip.max * image.rect.size().as_vec2(),
                         ),
-                        None => (image.rect.min, image.rect.max),
+                        None => (image.rect.min.as_vec2(), image.rect.max.as_vec2()),
                     };
 
-                    let tex_min = tex_min.as_vec2() / image.texture_size.as_vec2();
-                    let tex_max = tex_max.as_vec2() / image.texture_size.as_vec2();
+                    let tex_min = tex_min / image.texture_size.as_vec2();
+                    let tex_max = tex_max / image.texture_size.as_vec2();
 
                     (fill.tint, Source::Texture(image.texture), tex_min, tex_max)
                 })

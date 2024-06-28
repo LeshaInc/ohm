@@ -8,9 +8,9 @@ use lyon_tessellation::{
     BuffersBuilder, FillTessellator, FillVertex, StrokeTessellator, StrokeVertex, VertexBuffers,
 };
 
-use super::{Vertex, INSTANCE_FILL};
 use crate::math::{Rect, Vec2};
 use crate::path::{FillOptions, FillRule, LineCap, LineJoin, Path, PathEvent, StrokeOptions};
+use crate::renderer::{Vertex, INSTANCE_FILL};
 
 const CAPACITY: usize = 100;
 

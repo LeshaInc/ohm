@@ -1,3 +1,5 @@
+use ohm_core::renderer::PathCache;
+
 use crate::asset::AssetSources;
 use crate::encoder::EncoderScratch;
 use crate::image::ImageDecoders;
@@ -13,6 +15,7 @@ pub struct Graphics {
     pub asset_sources: AssetSources,
     pub image_decoders: ImageDecoders,
     pub texture_cache: TextureCache,
+    pub path_cache: PathCache,
     pub font_db: Box<dyn FontDatabase>,
     pub font_rasterizers: FontRasterizers,
     pub text_shaper: Box<dyn TextShaper>,
@@ -32,6 +35,7 @@ impl Graphics {
             asset_sources: AssetSources::new(),
             image_decoders: ImageDecoders::new(),
             texture_cache: TextureCache::new(),
+            path_cache: PathCache::new(),
             font_db: Box::new(DefaultFontDatabase::new()),
             font_rasterizers: FontRasterizers::new(),
             text_shaper: Box::new(DefaultTextShaper::new()),
@@ -78,6 +82,8 @@ impl Graphics {
         {
             let mut commands = Vec::new();
             self.texture_cache.add_glyphs_from_lists(draw_lists);
+            self.texture_cache
+                .set_image_sizes_from_lists(&mut self.path_cache, draw_lists);
             self.texture_cache.load_glyphs(
                 &*self.font_db,
                 &mut self.font_rasterizers,
@@ -91,7 +97,8 @@ impl Graphics {
             self.renderer.update_textures(&mut commands)?;
         }
 
-        self.renderer.render(&self.texture_cache, draw_lists)
+        self.renderer
+            .render(&self.texture_cache, &mut self.path_cache, draw_lists)
     }
 
     pub fn present(&mut self) -> Result<()> {

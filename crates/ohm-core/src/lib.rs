@@ -16,7 +16,7 @@ pub use self::error::*;
 use self::image::ImageId;
 pub use self::path::*;
 use self::renderer::SurfaceId;
-use crate::math::{Affine2, URect, Vec2};
+use crate::math::{Affine2, Rect, Vec2};
 use crate::text::{FontId, GlyphId};
 
 #[derive(Debug, Clone, Copy)]
@@ -102,7 +102,7 @@ pub enum Fill {
 pub struct FillImage {
     pub image: ImageId,
     pub tint: Color,
-    pub clip_rect: Option<URect>,
+    pub clip_rect: Option<Rect>,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -7,7 +7,7 @@ use ohm_core::{StrokeOptions, StrokePath};
 
 use crate::asset::AssetPath;
 use crate::image::ImageId;
-use crate::math::{Affine2, URect, Vec2};
+use crate::math::{Affine2, Rect, Vec2};
 use crate::renderer::SurfaceId;
 use crate::text::{FontDatabase, TextBuffer, TextShaper};
 use crate::texture::{MipmapMode, TextureCache};
@@ -194,7 +194,7 @@ impl RectBuilder<'_, '_, '_> {
         self
     }
 
-    pub fn image_clip_rect(mut self, clip_rect: impl Into<URect>) -> Self {
+    pub fn image_clip_rect(mut self, clip_rect: impl Into<Rect>) -> Self {
         if let Fill::Image(image) = &mut self.fill {
             image.clip_rect = Some(clip_rect.into());
         }
@@ -279,7 +279,7 @@ impl FillPathBuilder<'_, '_, '_> {
         self
     }
 
-    pub fn image_clip_rect(mut self, clip_rect: impl Into<URect>) -> Self {
+    pub fn image_clip_rect(mut self, clip_rect: impl Into<Rect>) -> Self {
         if let Fill::Image(image) = &mut self.fill {
             image.clip_rect = Some(clip_rect.into());
         }

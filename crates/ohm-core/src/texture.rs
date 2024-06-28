@@ -8,9 +8,12 @@ use slotmap::SlotMap;
 
 use crate::asset::{AssetPath, AssetSource};
 use crate::image::{ImageData, ImageDecoder, ImageFormat, ImageHandle};
-use crate::math::{URect, UVec2, Vec2};
+use crate::math::{Affine2, URect, UVec2, Vec2};
+use crate::renderer::PathCache;
 use crate::text::{FontDatabase, GlyphKey, Rasterizer, SubpixelBin};
-use crate::{Command, DrawList, Error, ErrorKind, ImageId, Result};
+use crate::{
+    Command, DrawList, DrawRect, Error, ErrorKind, Fill, FillPath, ImageId, Result, StrokePath,
+};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub struct TextureId(pub u64);
@@ -72,6 +75,8 @@ struct ImageEntry {
     texture: Option<TextureId>,
     rect: URect,
     alloc_id: Option<(AtlasId, AllocId)>,
+    requested_size: UVec2,
+    max_size: UVec2,
 }
 
 #[derive(Debug, Clone)]
@@ -109,11 +114,13 @@ impl TextureCache {
     pub fn add_image(&mut self, data: ImageData, mipmap_mode: MipmapMode) -> ImageHandle {
         let id = self.images.insert(ImageEntry {
             path: None,
-            data: Some(data),
             mipmap_mode,
             texture: None,
             rect: URect::ZERO,
             alloc_id: None,
+            requested_size: data.size,
+            max_size: data.size,
+            data: Some(data),
         });
 
         ImageHandle::new(id, self.image_cleanup_queue.clone())
@@ -145,6 +152,8 @@ impl TextureCache {
             texture: None,
             rect: URect::ZERO,
             alloc_id: None,
+            requested_size: UVec2::ZERO,
+            max_size: UVec2::ZERO,
         });
 
         self.images_by_path.insert(path, id);
@@ -168,7 +177,7 @@ impl TextureCache {
         }
     }
 
-    pub fn add_glyphs_from_commands(&mut self, commands: &[Command<'_>]) {
+    pub fn add_glyphs_from_commands(&mut self, commands: &[Command]) {
         for command in commands {
             match command {
                 Command::DrawLayer(layer) => self.add_glyphs_from_commands(layer.commands),
@@ -185,6 +194,82 @@ impl TextureCache {
         }
     }
 
+    pub fn set_image_sizes_from_lists(&mut self, path_cache: &mut PathCache, lists: &[DrawList]) {
+        for list in lists {
+            self.set_image_sizes_from_commands(path_cache, list.commands, Affine2::IDENTITY);
+        }
+    }
+
+    pub fn set_image_sizes_from_commands(
+        &mut self,
+        path_cache: &mut PathCache,
+        commands: &[Command],
+        transform: Affine2,
+    ) {
+        let scale_x = transform.matrix2.col(0).length();
+        let scale_y = transform.matrix2.col(1).length();
+        let scale = scale_x.max(scale_y);
+
+        for command in commands {
+            let (size, fill) = match command {
+                Command::DrawLayer(layer) => {
+                    self.set_image_sizes_from_commands(
+                        path_cache,
+                        layer.commands,
+                        layer.transform * transform,
+                    );
+                    continue;
+                }
+                Command::DrawRect(DrawRect {
+                    size,
+                    fill: Fill::Image(fill),
+                    ..
+                }) => (*size, fill),
+                Command::FillPath(FillPath {
+                    path,
+                    options,
+                    fill: Fill::Image(fill),
+                    ..
+                }) => {
+                    let mesh = path_cache.fill(path, options);
+                    let Some(rect) = mesh.bounding_rect else {
+                        continue;
+                    };
+                    (rect.size(), fill)
+                }
+                Command::StrokePath(StrokePath {
+                    path,
+                    options,
+                    fill: Fill::Image(fill),
+                    ..
+                }) => {
+                    let mesh = path_cache.stroke(path, options);
+                    let Some(rect) = mesh.bounding_rect else {
+                        continue;
+                    };
+                    (rect.size(), fill)
+                }
+                _ => continue,
+            };
+
+            let Some(image) = self.images.get_mut(fill.image) else {
+                continue;
+            };
+
+            if image.max_size != UVec2::ZERO && image.max_size.cmpge(image.requested_size).any() {
+                continue;
+            }
+
+            let size = match fill.clip_rect {
+                Some(clip) => size / clip.size(),
+                None => size,
+            };
+
+            let size = (size * scale).as_uvec2();
+            image.requested_size = image.requested_size.max(size);
+        }
+    }
+
     pub fn load_images(
         &mut self,
         source: &dyn AssetSource,
@@ -196,6 +281,8 @@ impl TextureCache {
                 continue;
             }
 
+            let requested_size = Some(image.requested_size).filter(|v| v.x != 0 && v.y != 0);
+
             let data = if let Some(data) = image.data.take() {
                 data
             } else if let Some(path) = image.path.as_ref() {
@@ -204,11 +291,15 @@ impl TextureCache {
                     .map_err(|e| e.with_context(format!("failed to load image from {path}")))?;
 
                 decoder
-                    .decode(path.extension(), &raw_data, None)
+                    .decode(path.extension(), &raw_data, requested_size)
                     .map_err(|e| e.with_context(format!("failed to decode image from {path}")))?
             } else {
                 continue;
             };
+
+            if requested_size.is_some_and(|v| v.cmpgt(data.size).any()) {
+                image.max_size = data.size;
+            }
 
             if data.size.cmpge(Self::MIN_STANDALONE_SIZE).any() {
                 let texture_id = self.id_allocator.alloc();

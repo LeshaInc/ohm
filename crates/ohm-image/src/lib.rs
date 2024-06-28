@@ -69,17 +69,15 @@ impl Rasterizer for EmbeddedImageRasterizer {
 }
 
 fn convert_image(mut image: image::RgbaImage, size: Option<UVec2>) -> ImageData {
-    if let Some(size) = size {
-        let old_size = UVec2::new(image.width(), image.height());
+    let old_size = UVec2::new(image.width(), image.height());
 
-        if size.cmplt(old_size).any() {
-            image = image::imageops::resize(
-                &image,
-                size.x,
-                size.y,
-                image::imageops::FilterType::Lanczos3,
-            );
-        }
+    if let Some(size) = size.filter(|v| v.cmplt(old_size).any()) {
+        image = image::imageops::resize(
+            &image,
+            size.x,
+            size.y,
+            image::imageops::FilterType::Lanczos3,
+        );
     }
 
     for pixel in image.pixels_mut() {

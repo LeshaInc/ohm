@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ohm::asset::FileAssetSource;
-use ohm::math::{vec2, Affine2, URect, UVec2, Vec2};
+use ohm::math::{vec2, Affine2, Rect, UVec2, Vec2};
 use ohm::renderer::SurfaceId;
 use ohm::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm::texture::MipmapMode;
@@ -104,7 +104,7 @@ fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
     encoder
         .rect(vec2(800.0, 700.0), vec2(100.0, 100.0))
         .image(&image)
-        .image_clip_rect(URect::new(UVec2::new(200, 200), UVec2::new(300, 300)))
+        .image_clip_rect(Rect::new(vec2(0.25, 0.5), vec2(0.5, 0.75)))
         .corner_radii(16.0)
         .border(Color::BLACK, 2.0);
 }

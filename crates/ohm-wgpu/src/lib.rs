@@ -5,8 +5,8 @@ use std::sync::Arc;
 use ohm_core::image::{ImageData, ImageFormat};
 use ohm_core::math::{URect, UVec2, Vec2, Vec4};
 use ohm_core::renderer::{
-    Batcher, BatcherScratch, Instance as BatcherInstance, Renderer, Source, SurfaceId, Target,
-    Vertex, WindowHandle,
+    Batcher, BatcherScratch, Instance as BatcherInstance, PathCache, Renderer, Source, SurfaceId,
+    Target, Vertex, WindowHandle,
 };
 use ohm_core::texture::{MipmapMode, TextureCache, TextureCommand, TextureId};
 use ohm_core::{DrawList, Error, ErrorKind, Result};
@@ -77,9 +77,15 @@ impl Renderer for WgpuRenderer {
         Ok(())
     }
 
-    fn render(&mut self, texture_cache: &TextureCache, draw_lists: &[DrawList<'_>]) -> Result<()> {
+    fn render(
+        &mut self,
+        texture_cache: &TextureCache,
+        path_cache: &mut PathCache,
+        draw_lists: &[DrawList<'_>],
+    ) -> Result<()> {
         if !draw_lists.is_empty() {
-            self.context_mut().render(texture_cache, draw_lists);
+            self.context_mut()
+                .render(texture_cache, path_cache, draw_lists);
         }
         Ok(())
     }
@@ -652,10 +658,16 @@ impl RendererContext {
         self.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    fn render(&mut self, texture_cache: &TextureCache, draw_lists: &[DrawList<'_>]) {
+    fn render(
+        &mut self,
+        texture_cache: &TextureCache,
+        path_cache: &mut PathCache,
+        draw_lists: &[DrawList<'_>],
+    ) {
         let mut batcher = Batcher::new(
             &mut self.batcher_scratch,
             texture_cache,
+            path_cache,
             MAX_INSTANCES_PER_BUFFER,
         );
 

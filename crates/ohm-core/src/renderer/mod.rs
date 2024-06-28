@@ -9,6 +9,7 @@ use crate::{DrawList, Result};
 mod batcher;
 mod path_cache;
 pub use self::batcher::*;
+pub use self::path_cache::*;
 
 slotmap::new_key_type! {
     pub struct SurfaceId;
@@ -25,7 +26,12 @@ pub trait Renderer: Send + Sync + 'static {
 
     fn update_textures(&mut self, commands: &mut Vec<TextureCommand>) -> Result<()>;
 
-    fn render(&mut self, texture_cache: &TextureCache, draw_lists: &[DrawList<'_>]) -> Result<()>;
+    fn render(
+        &mut self,
+        texture_cache: &TextureCache,
+        path_cache: &mut PathCache,
+        draw_lists: &[DrawList<'_>],
+    ) -> Result<()>;
 
     fn present(&mut self) -> Result<()>;
 }
