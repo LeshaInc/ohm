@@ -25,14 +25,14 @@ pub struct DrawList<'a> {
     pub commands: &'a [Command<'a>],
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Command<'a> {
     ClearRect(ClearRect),
     DrawRect(DrawRect),
     DrawGlyph(DrawGlyph),
     DrawLayer(DrawLayer<'a>),
-    FillPath(FillPath<'a>),
-    StrokePath(StrokePath<'a>),
+    FillPath(FillPath),
+    StrokePath(StrokePath),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -69,18 +69,18 @@ pub struct DrawLayer<'a> {
     pub transform: Affine2,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct FillPath<'a> {
+#[derive(Debug, Clone)]
+pub struct FillPath {
     pub pos: Vec2,
-    pub path: &'a Path,
+    pub path: Path,
     pub options: FillOptions,
     pub fill: Fill,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct StrokePath<'a> {
+#[derive(Debug, Clone)]
+pub struct StrokePath {
     pub pos: Vec2,
-    pub path: &'a Path,
+    pub path: Path,
     pub options: StrokeOptions,
     pub fill: Fill,
 }

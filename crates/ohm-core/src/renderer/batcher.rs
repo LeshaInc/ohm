@@ -260,7 +260,7 @@ impl Batcher<'_> {
                 }
 
                 Command::FillPath(path) => {
-                    let mesh = self.path_cache.fill(path.path, &path.options);
+                    let mesh = self.path_cache.fill(&path.path, &path.options);
                     let Some(rect) = mesh.bounding_rect else {
                         continue;
                     };
@@ -268,7 +268,7 @@ impl Batcher<'_> {
                 }
 
                 Command::StrokePath(path) => {
-                    let mesh = self.path_cache.stroke(path.path, &path.options);
+                    let mesh = self.path_cache.stroke(&path.path, &path.options);
                     let Some(rect) = mesh.bounding_rect else {
                         continue;
                     };
@@ -323,7 +323,7 @@ impl Batcher<'_> {
     fn dispatch_commands(&mut self, commands: &[Command<'_>]) -> Range<usize> {
         let first_batch = self.batches.len();
 
-        for &command in commands {
+        for command in commands {
             match command {
                 Command::ClearRect(rect) => self.cmd_clear_rect(rect),
                 Command::DrawRect(rect) => self.cmd_draw_rect(rect),
@@ -339,7 +339,7 @@ impl Batcher<'_> {
         first_batch..self.batches.len()
     }
 
-    fn cmd_clear_rect(&mut self, rect: ClearRect) {
+    fn cmd_clear_rect(&mut self, rect: &ClearRect) {
         self.set_clear(true);
         self.set_source(Source::White);
 
@@ -352,7 +352,7 @@ impl Batcher<'_> {
         });
     }
 
-    fn cmd_draw_rect(&mut self, rect: DrawRect) {
+    fn cmd_draw_rect(&mut self, rect: &DrawRect) {
         self.set_clear(false);
 
         let (color, source, mut tex_min, mut tex_max) = self.get_fill(&rect.fill);
@@ -427,7 +427,7 @@ impl Batcher<'_> {
         });
     }
 
-    fn cmd_draw_glyph(&mut self, glyph: DrawGlyph) {
+    fn cmd_draw_glyph(&mut self, glyph: &DrawGlyph) {
         self.set_clear(false);
 
         let color = glyph.color;
@@ -470,7 +470,7 @@ impl Batcher<'_> {
         });
     }
 
-    fn cmd_draw_layer(&mut self, layer: DrawLayer<'_>) {
+    fn cmd_draw_layer(&mut self, layer: &DrawLayer<'_>) {
         self.set_clear(false);
 
         let is_no_tint = layer.tint == Color::WHITE;
@@ -524,7 +524,7 @@ impl Batcher<'_> {
         self.set_target(Target::Intermediate(intermediate));
 
         self.transform_stack.push(Affine2::IDENTITY);
-        self.cmd_clear_rect(ClearRect {
+        self.cmd_clear_rect(&ClearRect {
             pos: Vec2::ZERO,
             size: rect.size(),
             color: Color::TRANSPAENT,
@@ -564,12 +564,12 @@ impl Batcher<'_> {
         self.transform_stack.pop();
     }
 
-    fn cmd_fill_path(&mut self, path: &FillPath<'_>) {
+    fn cmd_fill_path(&mut self, path: &FillPath) {
         let (color, source, tex_min, tex_max) = self.get_fill(&path.fill);
 
         self.set_source(source);
 
-        let mesh = self.path_cache.fill(path.path, &path.options);
+        let mesh = self.path_cache.fill(&path.path, &path.options);
         Self::draw_mesh(
             &mut self.vertices,
             &mut self.indices,
@@ -582,12 +582,12 @@ impl Batcher<'_> {
         );
     }
 
-    fn cmd_stroke_path(&mut self, path: &StrokePath<'_>) {
+    fn cmd_stroke_path(&mut self, path: &StrokePath) {
         let (color, source, tex_min, tex_max) = self.get_fill(&path.fill);
 
         self.set_source(source);
 
-        let mesh = self.path_cache.stroke(path.path, &path.options);
+        let mesh = self.path_cache.stroke(&path.path, &path.options);
         Self::draw_mesh(
             &mut self.vertices,
             &mut self.indices,

@@ -112,11 +112,10 @@ impl<'g, 's> Encoder<'g, 's> {
     }
 
     pub fn fill_path(&mut self, pos: impl Into<Vec2>, path: &Path) -> FillPathBuilder<'_, 'g, 's> {
-        let path = self.bump.alloc(path.clone());
         FillPathBuilder {
             encoder: self,
             pos: pos.into(),
-            path,
+            path: Some(path.clone()),
             options: FillOptions::default(),
             fill: Fill::Solid(Color::BLACK),
         }
@@ -131,7 +130,7 @@ impl<'g, 's> Encoder<'g, 's> {
         StrokePathBuilder {
             encoder: self,
             pos: pos.into(),
-            path,
+            path: Some(path.clone()),
             options: StrokeOptions::default(),
             fill: Fill::Solid(Color::BLACK),
         }
@@ -239,7 +238,7 @@ impl Drop for RectBuilder<'_, '_, '_> {
 pub struct FillPathBuilder<'e, 'g, 's> {
     encoder: &'e mut Encoder<'g, 's>,
     pos: Vec2,
-    path: &'s Path,
+    path: Option<Path>,
     options: FillOptions,
     fill: Fill,
 }
@@ -293,7 +292,7 @@ impl Drop for FillPathBuilder<'_, '_, '_> {
     fn drop(&mut self) {
         self.encoder.command(Command::FillPath(FillPath {
             pos: self.pos,
-            path: self.path,
+            path: self.path.take().unwrap(),
             options: self.options,
             fill: self.fill,
         }))
@@ -303,7 +302,7 @@ impl Drop for FillPathBuilder<'_, '_, '_> {
 pub struct StrokePathBuilder<'e, 'g, 's> {
     encoder: &'e mut Encoder<'g, 's>,
     pos: Vec2,
-    path: &'s Path,
+    path: Option<Path>,
     options: StrokeOptions,
     fill: Fill,
 }
@@ -319,7 +318,7 @@ impl Drop for StrokePathBuilder<'_, '_, '_> {
     fn drop(&mut self) {
         self.encoder.command(Command::StrokePath(StrokePath {
             pos: self.pos,
-            path: self.path,
+            path: self.path.take().unwrap(),
             options: self.options,
             fill: self.fill,
         }))
