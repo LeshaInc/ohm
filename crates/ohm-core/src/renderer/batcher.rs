@@ -191,7 +191,14 @@ impl Batcher<'_> {
         }
 
         self.set_target(Target::Surface(draw_list.surface));
-        self.dispatch_commands(draw_list.commands, Affine2::IDENTITY);
+
+        if self.should_enable_msaa(draw_list.commands) {
+            self.draw_intermediate_layer(draw_list.commands, Color::WHITE, Affine2::IDENTITY, true);
+        } else {
+            self.dispatch_commands(draw_list.commands, Affine2::IDENTITY);
+        }
+
+        self.flush();
     }
 
     pub fn batches(&self) -> &[Batch] {
@@ -284,6 +291,26 @@ impl Batcher<'_> {
         }
 
         bounding_rect
+    }
+
+    fn should_enable_msaa(&self, commands: &[Command]) -> bool {
+        for command in commands {
+            match command {
+                Command::FillPath(_) | Command::StrokePath(_) => return true,
+                Command::DrawLayer(layer) => {
+                    let is_no_tint = layer.tint == Color::WHITE;
+                    let is_compatible_scissor = layer.scissor.is_none();
+                    let is_fast_path = is_no_tint && is_compatible_scissor;
+
+                    if is_fast_path && self.should_enable_msaa(layer.commands) {
+                        return true;
+                    }
+                }
+                _ => continue,
+            }
+        }
+
+        false
     }
 
     fn push_transform(&mut self, transform: Affine2) {
@@ -530,7 +557,6 @@ impl Batcher<'_> {
 
         let is_no_tint = layer.tint == Color::WHITE;
         let is_compatible_scissor = layer.scissor.is_none();
-
         let is_fast_path = is_no_tint && is_compatible_scissor;
 
         if is_fast_path {
@@ -538,15 +564,26 @@ impl Batcher<'_> {
             return;
         }
 
-        let Some(local_rect) = self.compute_bouding_rect(layer.commands) else {
+        let enable_msaa = self.should_enable_msaa(layer.commands);
+        self.draw_intermediate_layer(layer.commands, layer.tint, layer.transform, enable_msaa);
+    }
+
+    fn draw_intermediate_layer(
+        &mut self,
+        commands: &[Command],
+        tint: Color,
+        transform: Affine2,
+        enable_msaa: bool,
+    ) {
+        let Some(local_rect) = self.compute_bouding_rect(commands) else {
             return;
         };
 
         let layer_transform = self
             .transform_stack
             .last()
-            .map(|v| *v * layer.transform)
-            .unwrap_or(layer.transform);
+            .map(|v| *v * transform)
+            .unwrap_or(transform);
 
         let mut rect = local_rect.transform(&layer_transform);
         rect.min = rect.min.floor() - 1.0;
@@ -558,7 +595,11 @@ impl Batcher<'_> {
         let intermediate_alloc = self.alloc_intermediate(intermediate, rect.size().as_uvec2());
 
         let old_target = self.cur_target;
-        self.set_target(Target::IntermediateMsaa(intermediate));
+        self.set_target(if enable_msaa {
+            Target::IntermediateMsaa(intermediate)
+        } else {
+            Target::Intermediate(intermediate)
+        });
 
         self.transform_stack.push(Affine2::IDENTITY);
         self.cmd_clear_rect(ClearRect {
@@ -570,7 +611,7 @@ impl Batcher<'_> {
 
         self.transform_stack
             .push(Affine2::from_translation(-rect.min) * layer_transform);
-        self.dispatch_commands(layer.commands, Affine2::IDENTITY);
+        self.dispatch_commands(commands, Affine2::IDENTITY);
         self.transform_stack.pop();
 
         let tex_size = self.intermediate_allocators[intermediate as usize].size();
@@ -590,7 +631,7 @@ impl Batcher<'_> {
             local_max: Vec2::ZERO,
             tex_min,
             tex_max,
-            color: layer.tint.into(),
+            color: tint.into(),
             instance_id: INSTANCE_FILL,
         });
         self.transform_stack.pop();
