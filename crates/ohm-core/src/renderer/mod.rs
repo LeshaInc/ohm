@@ -7,6 +7,7 @@ use crate::texture::{TextureCache, TextureCommand};
 use crate::{DrawList, Result};
 
 mod batcher;
+mod path_cache;
 pub use self::batcher::*;
 
 slotmap::new_key_type! {

@@ -8,7 +8,7 @@ use ohm::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, Text
 use ohm::texture::MipmapMode;
 use ohm::{
     Border, ClearRect, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill,
-    FillImage, Graphics, Shadow,
+    FillImage, Graphics, PathBuilder, Shadow, StrokeOptions, StrokePath,
 };
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -193,6 +193,20 @@ impl ApplicationHandler for App {
                         width: 2.0,
                     }),
                     shadow,
+                }));
+
+                let mut path = PathBuilder::new();
+                path.move_to(vec2(0.0, 0.0));
+                path.line_to(vec2(300.0, 100.0));
+                path.line_to(vec2(50.0, 120.0));
+                path.close();
+                let path = path.finish();
+
+                layer_commands.push(Command::StrokePath(StrokePath {
+                    pos: vec2(10.0, 200.0),
+                    path: &path,
+                    options: StrokeOptions::default(),
+                    fill: Fill::Solid(Color::rgba(0.0, 0.0, 0.1, 1.0)),
                 }));
 
                 commands.push(Command::DrawLayer(DrawLayer {

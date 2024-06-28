@@ -4,6 +4,7 @@ use std::ops::Range;
 use glam::Affine2;
 use guillotiere::{AllocId, AtlasAllocator};
 
+use super::path_cache::{Mesh, PathCache};
 use super::SurfaceId;
 use crate::image::ImageFormat;
 use crate::math::{Rect, URect, UVec2, Vec2, Vec4};
@@ -11,6 +12,7 @@ use crate::text::{GlyphKey, SubpixelBin};
 use crate::texture::{TextureCache, TextureId};
 use crate::{
     ClearRect, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill,
+    FillPath, StrokePath,
 };
 
 pub const INSTANCE_FILL: u32 = 4294967295;
@@ -99,6 +101,7 @@ pub struct BatcherScratch {
     batches: Vec<Batch>,
     transform_stack: Vec<Affine2>,
     intermediate_allocators: [AtlasAllocator; 2],
+    path_cache: PathCache,
 }
 
 impl BatcherScratch {
@@ -127,6 +130,7 @@ impl Default for BatcherScratch {
                 AtlasAllocator::new(guillotiere_size2d(UVec2::new(256, 256))),
                 AtlasAllocator::new(guillotiere_size2d(UVec2::new(256, 256))),
             ],
+            path_cache: PathCache::new(),
         }
     }
 }
@@ -145,6 +149,7 @@ pub struct Batcher<'a> {
     batches: &'a mut Vec<Batch>,
     transform_stack: &'a mut Vec<Affine2>,
     intermediate_allocators: &'a mut [AtlasAllocator; 2],
+    path_cache: &'a mut PathCache,
     cur_clear: bool,
     cur_target: Target,
     cur_source: Source,
@@ -169,6 +174,7 @@ impl Batcher<'_> {
             batches: &mut scratch.batches,
             transform_stack: &mut scratch.transform_stack,
             intermediate_allocators: &mut scratch.intermediate_allocators,
+            path_cache: &mut scratch.path_cache,
             cur_clear: false,
             cur_target: Target::Intermediate(Intermediate::A),
             cur_source: Source::White,
@@ -209,7 +215,7 @@ impl Batcher<'_> {
         UVec2::new(size.width as u32, size.height as u32)
     }
 
-    fn compute_bouding_rect(&self, commands: &[Command]) -> Option<Rect> {
+    fn compute_bouding_rect(&mut self, commands: &[Command]) -> Option<Rect> {
         let mut bounding_rect: Option<Rect> = None;
 
         for command in commands {
@@ -255,6 +261,22 @@ impl Batcher<'_> {
                     };
 
                     rect.transform(&layer.transform)
+                }
+
+                Command::FillPath(path) => {
+                    let mesh = self.path_cache.fill(path.path, &path.options);
+                    let Some(rect) = mesh.bounding_rect else {
+                        continue;
+                    };
+                    rect
+                }
+
+                Command::StrokePath(path) => {
+                    let mesh = self.path_cache.stroke(path.path, &path.options);
+                    let Some(rect) = mesh.bounding_rect else {
+                        continue;
+                    };
+                    rect
                 }
             };
 
@@ -358,6 +380,8 @@ impl Batcher<'_> {
                 Command::DrawRect(rect) => self.cmd_draw_rect(rect),
                 Command::DrawGlyph(glyph) => self.cmd_draw_glyph(glyph),
                 Command::DrawLayer(layer) => self.cmd_draw_layer(layer),
+                Command::FillPath(path) => self.cmd_fill_path(&path),
+                Command::StrokePath(path) => self.cmd_stroke_path(&path),
             }
         }
 
@@ -386,32 +410,7 @@ impl Batcher<'_> {
     fn cmd_draw_rect(&mut self, rect: DrawRect) {
         self.set_clear(false);
 
-        let color = match rect.fill {
-            Fill::Solid(color) => color,
-            Fill::Image(fill) => fill.tint,
-        };
-
-        let (source, mut tex_min, mut tex_max) = match rect.fill {
-            Fill::Image(fill) => self
-                .texture_cache
-                .get_image(fill.image)
-                .map(|image| {
-                    let (tex_min, tex_max) = match fill.clip_rect {
-                        Some(clip) => (
-                            (image.rect.min + clip.min).min(image.rect.max),
-                            (image.rect.min + clip.max).min(image.rect.max),
-                        ),
-                        None => (image.rect.min, image.rect.max),
-                    };
-
-                    let tex_min = tex_min.as_vec2() / image.texture_size.as_vec2();
-                    let tex_max = tex_max.as_vec2() / image.texture_size.as_vec2();
-
-                    (Source::Texture(image.texture), tex_min, tex_max)
-                })
-                .unwrap_or((Source::White, Vec2::ZERO, Vec2::ZERO)),
-            _ => (Source::White, Vec2::ZERO, Vec2::ZERO),
-        };
+        let (color, source, mut tex_min, mut tex_max) = self.get_fill(&rect.fill);
 
         self.set_source(source);
 
@@ -597,6 +596,102 @@ impl Batcher<'_> {
         self.transform_stack.pop();
 
         self.free_intermediate(intermediate_alloc);
+    }
+
+    fn cmd_fill_path(&mut self, path: &FillPath<'_>) {
+        let (color, source, tex_min, tex_max) = self.get_fill(&path.fill);
+
+        self.set_source(source);
+
+        let mesh = self.path_cache.fill(path.path, &path.options);
+        Self::draw_mesh(
+            &mut self.vertices,
+            &mut self.indices,
+            &self.transform_stack,
+            path.pos,
+            mesh,
+            color,
+            tex_min,
+            tex_max,
+        );
+    }
+
+    fn cmd_stroke_path(&mut self, path: &StrokePath<'_>) {
+        let (color, source, tex_min, tex_max) = self.get_fill(&path.fill);
+
+        self.set_source(source);
+
+        let mesh = self.path_cache.stroke(path.path, &path.options);
+        Self::draw_mesh(
+            &mut self.vertices,
+            &mut self.indices,
+            &self.transform_stack,
+            path.pos,
+            mesh,
+            color,
+            tex_min,
+            tex_max,
+        );
+    }
+
+    fn draw_mesh(
+        vertices: &mut Vec<Vertex>,
+        indices: &mut Vec<u32>,
+        transform_stack: &[Affine2],
+        origin: Vec2,
+        mesh: &Mesh,
+        color: Color,
+        tex_min: Vec2,
+        tex_max: Vec2,
+    ) {
+        let Some(rect) = mesh.bounding_rect else {
+            return;
+        };
+
+        let tex_scale = (tex_max - tex_min) / rect.size();
+        let first_idx = vertices.len() as u32;
+
+        for &vertex in &mesh.vertices {
+            let pos = match transform_stack.last() {
+                Some(transform) => origin + transform.transform_point2(vertex.pos),
+                None => origin + vertex.pos,
+            };
+
+            vertices.push(Vertex {
+                pos,
+                tex: tex_min + (vertex.pos - rect.min) * tex_scale,
+                color: color.into(),
+                ..vertex
+            });
+        }
+
+        for &index in &mesh.indices {
+            indices.push(index + first_idx);
+        }
+    }
+
+    fn get_fill(&self, fill: &Fill) -> (Color, Source, Vec2, Vec2) {
+        match fill {
+            Fill::Image(fill) => self
+                .texture_cache
+                .get_image(fill.image)
+                .map(|image| {
+                    let (tex_min, tex_max) = match fill.clip_rect {
+                        Some(clip) => (
+                            (image.rect.min + clip.min).min(image.rect.max),
+                            (image.rect.min + clip.max).min(image.rect.max),
+                        ),
+                        None => (image.rect.min, image.rect.max),
+                    };
+
+                    let tex_min = tex_min.as_vec2() / image.texture_size.as_vec2();
+                    let tex_max = tex_max.as_vec2() / image.texture_size.as_vec2();
+
+                    (fill.tint, Source::Texture(image.texture), tex_min, tex_max)
+                })
+                .unwrap_or((fill.tint, Source::White, Vec2::ZERO, Vec2::ZERO)),
+            Fill::Solid(color) => (*color, Source::White, Vec2::ZERO, Vec2::ZERO),
+        }
     }
 
     fn flush(&mut self) {
