@@ -13,6 +13,7 @@ ohm-rustybuzz = { workspace = true, optional = true }
 ohm-wgpu = { workspace = true, optional = true }
 ohm-zeno = { workspace = true, optional = true }
 
+bumpalo.workspace = true
 image = { version = "*", optional = true }
 
 [dev-dependencies]

@@ -9,10 +9,12 @@ pub use self::font::*;
 pub use self::font_db::*;
 pub use self::rasterization::*;
 pub use self::shaping::*;
+use crate::Color;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextAttrs {
     pub size: f32,
+    pub color: Color,
     pub align: TextAlign,
     pub fonts: FontFamilies,
     pub weight: FontWeight,
@@ -25,6 +27,7 @@ impl Default for TextAttrs {
     fn default() -> Self {
         Self {
             size: 16.0,
+            color: Color::BLACK,
             align: Default::default(),
             fonts: Default::default(),
             weight: Default::default(),

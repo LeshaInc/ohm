@@ -1,11 +1,12 @@
 use crate::asset::AssetSources;
+use crate::encoder::EncoderScratch;
 use crate::image::ImageDecoders;
-use crate::renderer::Renderer;
+use crate::renderer::{Renderer, SurfaceId};
 use crate::text::{
     DefaultFontDatabase, DefaultTextShaper, FontDatabase, FontRasterizers, TextShaper,
 };
 use crate::texture::TextureCache;
-use crate::{DrawList, Result};
+use crate::{DrawList, Encoder, Result};
 
 pub struct Graphics {
     pub renderer: Box<dyn Renderer>,
@@ -57,6 +58,20 @@ impl Graphics {
         #[cfg(feature = "zeno")]
         self.font_rasterizers
             .add_rasterizer(ohm_zeno::ZenoRasterizer::new());
+    }
+
+    pub fn create_encoder<'g, 's>(
+        &'g mut self,
+        scratch: &'s EncoderScratch,
+        surface: SurfaceId,
+    ) -> Encoder<'g, 's> {
+        Encoder::new(
+            &scratch,
+            &mut *self.font_db,
+            &mut *self.text_shaper,
+            &mut self.texture_cache,
+            surface,
+        )
     }
 
     pub fn render(&mut self, draw_lists: &[DrawList]) -> Result<()> {

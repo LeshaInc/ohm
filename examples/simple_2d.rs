@@ -1,24 +1,113 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ohm::asset::{AssetPath, FileAssetSource};
-use ohm::math::{vec2, Affine2, URect, UVec2};
+use ohm::asset::FileAssetSource;
+use ohm::math::{vec2, Affine2, URect, UVec2, Vec2};
 use ohm::renderer::SurfaceId;
 use ohm::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
-use ohm::texture::MipmapMode;
-use ohm::{
-    Border, ClearRect, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill,
-    FillImage, Graphics, PathBuilder, Shadow, StrokeOptions, StrokePath,
-};
+use ohm::{Color, Encoder, EncoderScratch, Graphics, PathBuilder, Shadow};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
+fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
+    encoder.rect(vec2(0.0, 0.0), size).color(Color::WHITE);
+
+    encoder
+        .rect(vec2(50.0, 50.0), size - vec2(100.0, 100.0))
+        .color(Color::TRANSPAENT)
+        .border(Color::rgb(1.0, 0.0, 0.0), 1.0);
+
+    text_buffer.set_max_width(size.x - 100.0);
+    text_buffer.compute_layout(encoder.font_db, encoder.text_shaper);
+    encoder.text(vec2(50.0, 50.0), text_buffer);
+
+    {
+        let mut layer = encoder
+            .layer()
+            .tint(Color::rgba(0.5, 0.5, 0.5, 0.5))
+            .transform(Affine2::from_scale_angle_translation(
+                vec2(2.0, 2.0),
+                30f32.to_radians(),
+                vec2(600.0, -200.0),
+            ));
+
+        let shadow = Shadow {
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+            offset: vec2(8.0, 4.0),
+            color: Color::rgba(0.0, 0.0, 0.0, 0.5),
+        };
+
+        layer
+            .rect(vec2(80.0, 80.0), vec2(100.0, 100.0))
+            .color(Color::rgb(1.0, 0.0, 0.0))
+            .border(Color::BLACK, 2.0)
+            .corner_radii(8.0)
+            .shadow(shadow);
+
+        layer
+            .rect(vec2(120.0, 120.0), vec2(100.0, 100.0))
+            .color(Color::rgb(0.0, 1.0, 0.0))
+            .border(Color::BLACK, 2.0)
+            .corner_radii(8.0)
+            .shadow(shadow);
+
+        let mut path = PathBuilder::new();
+        path.move_to(vec2(0.0, 0.0));
+        path.line_to(vec2(300.0, 100.0));
+        path.line_to(vec2(50.0, 120.0));
+        path.close();
+        let path = path.finish();
+
+        layer
+            .fill_path(vec2(0.0, 190.0), &path)
+            .color(Color::rgba(0.0, 0.0, 0.5, 0.5));
+        layer
+            .stroke_path(vec2(0.0, 190.0), &path)
+            .color(Color::BLACK);
+    }
+
+    let shadow = Shadow {
+        blur_radius: 12.0,
+        spread_radius: 0.0,
+        offset: vec2(0.0, 4.0),
+        color: Color::rgba(0.0, 0.0, 0.0, 0.5),
+    };
+
+    encoder
+        .rect(vec2(80.0, 80.0), vec2(100.0, 100.0))
+        .color(Color::rgba(0.5, 0.0, 0.0, 0.5))
+        .border(Color::BLACK, 2.0)
+        .corner_radii(8.0)
+        .shadow(shadow);
+
+    encoder
+        .rect(vec2(120.0, 120.0), vec2(100.0, 100.0))
+        .color(Color::rgba(0.0, 0.5, 0.0, 0.5))
+        .border(Color::BLACK, 2.0)
+        .corner_radii(8.0)
+        .shadow(shadow);
+
+    encoder
+        .rect(vec2(100.0, 400.0), vec2(574.0, 432.0))
+        .image_path("file:kitten.jpg")
+        .corner_radii(16.0);
+
+    encoder
+        .rect(vec2(800.0, 700.0), vec2(100.0, 100.0))
+        .image_path("file:kitten.jpg")
+        .image_clip_rect(URect::new(UVec2::new(200, 200), UVec2::new(300, 300)))
+        .corner_radii(16.0)
+        .border(Color::BLACK, 2.0);
+}
+
 struct AppState {
     window: Arc<Window>,
     graphics: Graphics,
+    encoder_scratch: EncoderScratch,
     buffer: TextBuffer,
     surface: SurfaceId,
 }
@@ -83,6 +172,7 @@ impl ApplicationHandler for App {
         self.state = Some(AppState {
             window,
             graphics,
+            encoder_scratch: EncoderScratch::new(),
             buffer,
             surface,
         });
@@ -119,188 +209,15 @@ impl ApplicationHandler for App {
                     .get_surface_size(state.surface)
                     .as_vec2();
 
-                let mut commands = Vec::new();
-
-                commands.push(Command::DrawRect(DrawRect {
-                    pos: vec2(0.0, 0.0),
-                    size,
-                    fill: Fill::Solid(Color::WHITE),
-                    corner_radii: CornerRadii::default(),
-                    border: None,
-                    shadow: None,
-                }));
-
-                commands.push(Command::DrawRect(DrawRect {
-                    pos: vec2(50.0, 50.0),
-                    size: size - vec2(100.0, 100.0),
-                    fill: Fill::Solid(Color::TRANSPAENT),
-                    corner_radii: CornerRadii::default(),
-                    border: Some(Border {
-                        color: Color::rgb(1.0, 0.0, 0.0),
-                        width: 1.0,
-                    }),
-                    shadow: None,
-                }));
-
-                state.buffer.set_max_width(size.x - 100.0);
-                state.buffer.compute_layout(
-                    &mut *state.graphics.font_db,
-                    &mut *state.graphics.text_shaper,
-                );
-
-                for run in state.buffer.runs() {
-                    let mut pos = run.pos + vec2(50.0, 50.0);
-                    for glyph in &state.buffer.glyphs()[run.glyph_range.clone()] {
-                        commands.push(Command::DrawGlyph(DrawGlyph {
-                            pos: pos + glyph.offset,
-                            size: run.font_size,
-                            font: run.font,
-                            glyph: glyph.glyph_id,
-                            color: Color::BLACK,
-                        }));
-                        pos.x += glyph.x_advance;
-                    }
-                }
-
-                let mut layer_commands = Vec::new();
-
-                let shadow = Some(Shadow {
-                    blur_radius: 0.0,
-                    spread_radius: 0.0,
-                    offset: vec2(8.0, 4.0),
-                    color: Color::rgba(0.0, 0.0, 0.0, 0.5),
-                });
-
-                layer_commands.push(Command::DrawRect(DrawRect {
-                    pos: vec2(80.0, 80.0),
-                    size: vec2(100.0, 100.0),
-                    fill: Fill::Solid(Color::rgb(1.0, 0.0, 0.0)),
-                    corner_radii: CornerRadii::new_equal(8.0),
-                    border: Some(Border {
-                        color: Color::BLACK,
-                        width: 2.0,
-                    }),
-                    shadow,
-                }));
-
-                layer_commands.push(Command::DrawRect(DrawRect {
-                    pos: vec2(120.0, 120.0),
-                    size: vec2(100.0, 100.0),
-                    fill: Fill::Solid(Color::rgb(0.0, 1.0, 0.0)),
-                    corner_radii: CornerRadii::new_equal(8.0),
-                    border: Some(Border {
-                        color: Color::BLACK,
-                        width: 2.0,
-                    }),
-                    shadow,
-                }));
-
-                let mut path = PathBuilder::new();
-                path.move_to(vec2(0.0, 0.0));
-                path.line_to(vec2(300.0, 100.0));
-                path.line_to(vec2(50.0, 120.0));
-                path.close();
-                let path = path.finish();
-
-                layer_commands.push(Command::StrokePath(StrokePath {
-                    pos: vec2(10.0, 200.0),
-                    path: &path,
-                    options: StrokeOptions::default(),
-                    fill: Fill::Solid(Color::rgba(0.0, 0.0, 0.1, 1.0)),
-                }));
-
-                commands.push(Command::DrawLayer(DrawLayer {
-                    commands: &layer_commands,
-                    tint: Color::rgba(0.5, 0.5, 0.5, 0.5),
-                    scissor: None,
-                    transform: Affine2::from_scale_angle_translation(
-                        vec2(2.0, 2.0),
-                        30f32.to_radians(),
-                        vec2(600.0, -200.0),
-                    ),
-                }));
-
-                let shadow = Some(Shadow {
-                    blur_radius: 12.0,
-                    spread_radius: 0.0,
-                    offset: vec2(0.0, 4.0),
-                    color: Color::rgba(0.0, 0.0, 0.0, 0.5),
-                });
-
-                commands.push(Command::DrawRect(DrawRect {
-                    pos: vec2(280.0, 80.0),
-                    size: vec2(100.0, 100.0),
-                    fill: Fill::Solid(Color::rgba(0.5, 0.0, 0.0, 0.5)),
-                    corner_radii: CornerRadii::new_equal(8.0),
-                    border: Some(Border {
-                        color: Color::BLACK,
-                        width: 2.0,
-                    }),
-                    shadow,
-                }));
-
-                commands.push(Command::DrawRect(DrawRect {
-                    pos: vec2(320.0, 120.0),
-                    size: vec2(100.0, 100.0),
-                    fill: Fill::Solid(Color::rgba(0.0, 0.5, 0.0, 0.5)),
-                    corner_radii: CornerRadii::new_equal(8.0),
-                    border: Some(Border {
-                        color: Color::BLACK,
-                        width: 2.0,
-                    }),
-                    shadow,
-                }));
-
-                let image_id = state
+                let mut encoder = state
                     .graphics
-                    .texture_cache
-                    .add_image_by_path(AssetPath::new("file:kitten.jpg"), MipmapMode::Enabled);
+                    .create_encoder(&state.encoder_scratch, state.surface);
 
-                if let Some(image) = state.graphics.texture_cache.get_image(image_id) {
-                    commands.push(Command::DrawRect(DrawRect {
-                        pos: vec2(100.0, 400.0),
-                        size: image.rect.size().as_vec2(),
-                        fill: Fill::Image(FillImage {
-                            image: image_id,
-                            tint: Color::WHITE,
-                            clip_rect: None,
-                        }),
-                        corner_radii: CornerRadii::new_equal(16.0),
-                        border: None,
-                        shadow: None,
-                    }));
+                paint(&mut encoder, size, &mut state.buffer);
 
-                    commands.push(Command::DrawRect(DrawRect {
-                        pos: vec2(800.0, 700.0),
-                        size: vec2(100.0, 100.0),
-                        fill: Fill::Image(FillImage {
-                            image: image_id,
-                            tint: Color::WHITE,
-                            clip_rect: Some(URect::new(UVec2::new(200, 200), UVec2::new(300, 300))),
-                        }),
-                        corner_radii: CornerRadii::new_equal(8.0),
-                        border: Some(Border {
-                            color: Color::BLACK,
-                            width: 1.0,
-                        }),
-                        shadow: None,
-                    }));
-                }
+                let draw_list = encoder.finish();
 
-                commands.push(Command::ClearRect(ClearRect {
-                    pos: vec2(200.0, 200.0),
-                    size: vec2(300.0, 500.0),
-                    color: Color::rgba(0.0, 0.0, 0.0, 0.0),
-                }));
-
-                state
-                    .graphics
-                    .render(&[DrawList {
-                        surface: state.surface,
-                        commands: &commands,
-                    }])
-                    .unwrap();
-
+                state.graphics.render(&[draw_list]).unwrap();
                 state.graphics.present().unwrap();
             }
 

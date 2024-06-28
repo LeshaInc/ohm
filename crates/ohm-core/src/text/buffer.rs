@@ -9,6 +9,7 @@ use crate::text::{
     FontAttrs, FontDatabase, FontFace, FontFamily, FontId, LineHeight, ShapedGlyph, TextAlign,
     TextAttrs, TextShaper,
 };
+use crate::Color;
 
 #[derive(Debug)]
 pub struct TextBuffer {
@@ -42,6 +43,7 @@ pub struct Run {
     pub font_size: f32,
     pub line_height: f32,
     pub text_height: f32,
+    pub color: Color,
     pub width: f32,
     pub trailing_whitespace_width: f32,
     pub pos: Vec2,
@@ -153,6 +155,7 @@ impl TextBuffer {
                         font_size: 0.0,
                         line_height: 0.0,
                         text_height: 0.0,
+                        color: Color::BLACK,
                         width: 0.0,
                         trailing_whitespace_width: 0.0,
                         pos: Vec2::ZERO,
@@ -229,6 +232,7 @@ impl TextBuffer {
                 LineHeight::Px(v) => v,
                 LineHeight::Relative(v) => v * font_size,
             };
+            let color = section.attrs.color;
             let text = &self.text[run.range.clone()];
 
             // try shaping with each font until success
@@ -271,6 +275,7 @@ impl TextBuffer {
                     let metrics = font.metrics();
                     run.font = font.id();
                     run.font_size = font_size;
+                    run.color = color;
                     run.text_height = ((metrics.ascender + metrics.descender) as f32)
                         / (metrics.units_per_em as f32)
                         * font_size;
