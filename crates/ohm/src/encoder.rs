@@ -137,7 +137,7 @@ impl<'g, 's> Encoder<'g, 's> {
     }
 
     pub fn layer(&mut self) -> LayerEncoder<'_, 'g, 's> {
-        let parent_commands = std::mem::replace(&mut self.commands, BumpVec::new_in(&self.bump));
+        let parent_commands = std::mem::replace(&mut self.commands, BumpVec::new_in(self.bump));
         LayerEncoder {
             encoder: self,
             parent_commands: Some(parent_commands),
@@ -354,13 +354,13 @@ impl<'g, 's> Deref for LayerEncoder<'_, 'g, 's> {
     type Target = Encoder<'g, 's>;
 
     fn deref(&self) -> &Self::Target {
-        &self.encoder
+        self.encoder
     }
 }
 
 impl DerefMut for LayerEncoder<'_, '_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.encoder
+        self.encoder
     }
 }
 

@@ -85,6 +85,7 @@ pub enum Source {
     Intermediate(IntermediateId),
 }
 
+#[derive(Default)]
 pub struct BatcherScratch {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
@@ -106,19 +107,6 @@ impl BatcherScratch {
         self.batches.clear();
         self.transform_stack.clear();
         self.intermediates.clear();
-    }
-}
-
-impl Default for BatcherScratch {
-    fn default() -> Self {
-        Self {
-            vertices: Vec::new(),
-            indices: Vec::new(),
-            instances: Vec::new(),
-            batches: Vec::new(),
-            transform_stack: Vec::new(),
-            intermediates: Vec::new(),
-        }
     }
 }
 
@@ -180,7 +168,7 @@ impl Batcher<'_> {
 
         self.set_target(Target::Surface(draw_list.surface));
 
-        if self.should_enable_msaa(draw_list.commands) {
+        if Self::should_enable_msaa(draw_list.commands) {
             self.draw_intermediate_layer(draw_list.commands, Color::WHITE, Affine2::IDENTITY, true);
         } else {
             self.dispatch_commands(draw_list.commands);
@@ -206,7 +194,7 @@ impl Batcher<'_> {
     }
 
     pub fn intermediates(&self) -> &[Intermediate] {
-        &self.intermediates
+        self.intermediates
     }
 
     fn compute_bouding_rect(&mut self, commands: &[Command]) -> Option<Rect> {
@@ -280,7 +268,7 @@ impl Batcher<'_> {
         bounding_rect
     }
 
-    fn should_enable_msaa(&self, commands: &[Command]) -> bool {
+    fn should_enable_msaa(commands: &[Command]) -> bool {
         for command in commands {
             match command {
                 Command::FillPath(_) | Command::StrokePath(_) => return true,
@@ -289,7 +277,7 @@ impl Batcher<'_> {
                     let is_compatible_scissor = layer.scissor.is_none();
                     let is_fast_path = is_no_tint && is_compatible_scissor;
 
-                    if is_fast_path && self.should_enable_msaa(layer.commands) {
+                    if is_fast_path && Self::should_enable_msaa(layer.commands) {
                         return true;
                     }
                 }
@@ -327,8 +315,8 @@ impl Batcher<'_> {
                 Command::DrawRect(rect) => self.cmd_draw_rect(rect),
                 Command::DrawGlyph(glyph) => self.cmd_draw_glyph(glyph),
                 Command::DrawLayer(layer) => self.cmd_draw_layer(layer),
-                Command::FillPath(path) => self.cmd_fill_path(&path),
-                Command::StrokePath(path) => self.cmd_stroke_path(&path),
+                Command::FillPath(path) => self.cmd_fill_path(path),
+                Command::StrokePath(path) => self.cmd_stroke_path(path),
             }
         }
 
@@ -489,7 +477,7 @@ impl Batcher<'_> {
             return;
         }
 
-        let enable_msaa = self.should_enable_msaa(layer.commands);
+        let enable_msaa = Self::should_enable_msaa(layer.commands);
         self.draw_intermediate_layer(layer.commands, layer.tint, layer.transform, enable_msaa);
     }
 
@@ -569,9 +557,9 @@ impl Batcher<'_> {
 
         let mesh = self.path_cache.fill(&path.path, &path.options);
         Self::draw_mesh(
-            &mut self.vertices,
-            &mut self.indices,
-            &self.transform_stack,
+            self.vertices,
+            self.indices,
+            self.transform_stack,
             path.pos,
             mesh,
             color,
@@ -587,9 +575,9 @@ impl Batcher<'_> {
 
         let mesh = self.path_cache.stroke(&path.path, &path.options);
         Self::draw_mesh(
-            &mut self.vertices,
-            &mut self.indices,
-            &self.transform_stack,
+            self.vertices,
+            self.indices,
+            self.transform_stack,
             path.pos,
             mesh,
             color,
@@ -598,6 +586,7 @@ impl Batcher<'_> {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_mesh(
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,

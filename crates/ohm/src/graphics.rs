@@ -74,7 +74,7 @@ impl Graphics {
         surface: SurfaceId,
     ) -> Encoder<'g, 's> {
         Encoder::new(
-            &scratch,
+            scratch,
             &mut *self.font_db,
             &mut *self.text_shaper,
             &mut self.texture_cache,

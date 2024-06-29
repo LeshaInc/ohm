@@ -738,7 +738,7 @@ impl RendererContext {
                             .map(|t| &t.view)
                             .unwrap_or(&self.white_texture_view),
                         Source::Intermediate(intermediate) => {
-                            &self.intermediates[intermediate.0 as usize].texture_view
+                            &self.intermediates[intermediate.0].texture_view
                         }
                     };
 
@@ -771,7 +771,7 @@ impl RendererContext {
                     &self.surfaces[id].texture_view
                 }
                 Target::Intermediate(intermediate) => {
-                    let intermediate = &self.intermediates[intermediate.0 as usize];
+                    let intermediate = &self.intermediates[intermediate.0];
                     intermediate
                         .texture_view_msaa
                         .as_ref()
@@ -781,7 +781,7 @@ impl RendererContext {
 
             let (is_msaa, resolve_target) = match batch.target {
                 Target::Intermediate(intermediate) => {
-                    let intermediate = &self.intermediates[intermediate.0 as usize];
+                    let intermediate = &self.intermediates[intermediate.0];
                     if intermediate.texture_view_msaa.is_some() {
                         (
                             true,
@@ -811,18 +811,11 @@ impl RendererContext {
                 occlusion_query_set: None,
             });
 
-            let pipeline = if is_msaa {
-                if batch.clear {
-                    &self.uber_render_pipeline_noblend_msaa
-                } else {
-                    &self.uber_render_pipeline_msaa
-                }
-            } else {
-                if batch.clear {
-                    &self.uber_render_pipeline_noblend
-                } else {
-                    &self.uber_render_pipeline
-                }
+            let pipeline = match (is_msaa, batch.clear) {
+                (true, true) => &self.uber_render_pipeline_noblend_msaa,
+                (true, false) => &self.uber_render_pipeline_msaa,
+                (false, true) => &self.uber_render_pipeline_noblend,
+                (false, false) => &self.uber_render_pipeline,
             };
 
             pass.set_pipeline(pipeline);

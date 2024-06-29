@@ -113,6 +113,12 @@ impl PathCache {
     }
 }
 
+impl Default for PathCache {
+    fn default() -> Self {
+        PathCache::new()
+    }
+}
+
 fn compute_bounding_rect(vertices: &[Vertex]) -> Option<Rect> {
     if vertices.is_empty() {
         return None;
