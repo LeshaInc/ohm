@@ -1,3 +1,5 @@
+//! Asset management
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
@@ -5,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{Error, ErrorKind, Result};
 
+/// Path to an asset, consisting of a scheme and actual path. Example: `file:path/to/image.png`.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct AssetPath<'a> {
     str: Cow<'a, str>,
@@ -12,6 +15,13 @@ pub struct AssetPath<'a> {
 }
 
 impl AssetPath<'_> {
+    /// Creates an [`AssetPath`] from the provided string.
+    ///
+    /// The the string is expected to match `scheme:path`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided string has invalid format.
     pub fn new<'a>(str: impl Into<Cow<'a, str>>) -> AssetPath<'a> {
         let str: Cow<'_, str> = str.into();
 

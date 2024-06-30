@@ -1,3 +1,7 @@
+#![warn(missing_docs)]
+
+//! Core types and traits for Ohm (2D rendering library).
+
 pub mod math;
 pub mod renderer;
 
