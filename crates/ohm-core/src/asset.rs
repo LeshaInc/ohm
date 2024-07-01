@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use crate::{Error, ErrorKind, Result};
 
 /// Path to an asset, consisting of a scheme and actual path. Example: `file:path/to/image.png`.
+///
+/// Can be owned ([`AssetPath<'static>`]), or borrowed ([`AssetPath<'a>`]), similar to a [`Cow`].
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct AssetPath<'a> {
     str: Cow<'a, str>,
@@ -32,18 +34,22 @@ impl AssetPath<'_> {
         AssetPath { str, scheme_len }
     }
 
+    /// Returns the scheme, i.e. the part before the `:`.
     pub fn scheme(&self) -> &str {
         &self.str[..self.scheme_len]
     }
 
+    /// Returns the path, i.e. the part after the `:`.
     pub fn path(&self) -> &Path {
         self.str[self.scheme_len + 1..].as_ref()
     }
 
+    /// Returns the path extension, or `None` if it doesn't exist.
     pub fn extension(&self) -> Option<&str> {
         self.path().extension().and_then(|v| v.to_str())
     }
 
+    /// Converts this path into a borrowed version.
     pub fn as_borrowed(&self) -> AssetPath<'_> {
         AssetPath {
             str: Cow::Borrowed(&self.str),
@@ -51,6 +57,7 @@ impl AssetPath<'_> {
         }
     }
 
+    /// Turns this path into an owned version \, if it isn't already owned.
     pub fn into_owned(self) -> AssetPath<'static> {
         AssetPath {
             str: Cow::Owned(self.str.into_owned()),
@@ -89,24 +96,32 @@ impl fmt::Display for AssetPath<'_> {
     }
 }
 
+/// Asset data source. Given a path, loads the raw bytes.
 pub trait AssetSource: Send + Sync + 'static {
+    /// Loads the raw asset data from the specified path.
     fn load(&self, path: AssetPath<'_>) -> Result<Vec<u8>>;
 }
 
+/// An [`AssetSource`] that delegates to multiple other sources based on path scheme.
 #[derive(Default)]
 pub struct AssetSources {
     sources: HashMap<String, Box<dyn AssetSource>>,
 }
 
 impl AssetSources {
+    /// Creates an empty set of [`AssetSource`]'s.
     pub fn new() -> AssetSources {
         AssetSources::default()
     }
 
+    /// Registers an [`AssetSource`] into the set with the provided scheme.
+    ///
+    /// If there was an existing set with the same scheme, it will be overwritten.
     pub fn add_source(&mut self, scheme: impl Into<String>, source: impl AssetSource) {
         self.sources.insert(scheme.into(), Box::new(source));
     }
 
+    /// Finds an [`AssetSource`] based on the scheme.
     pub fn find_source(&self, scheme: &str) -> Option<&dyn AssetSource> {
         self.sources.get(scheme).map(|v| &**v)
     }
@@ -125,12 +140,22 @@ impl AssetSource for AssetSources {
     }
 }
 
+/// An [`AssetSource`] that loads data from files inside a root directory.
+///
+/// Note that paths cannot escape the specified root directory.
 #[derive(Debug)]
 pub struct FileAssetSource {
     root: PathBuf,
 }
 
 impl FileAssetSource {
+    /// Creates a [`FileAssetSource`] with a specified root directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ErrorKind::Io`] in case of an IO error, such as `not found`, `permission denied`, etc.
+    ///
+    /// Returns [`ErrorKind::InvalidPath`] if the provided path does not point to a directory.
     pub fn new(root: impl Into<PathBuf>) -> Result<FileAssetSource> {
         let root = root.into().canonicalize()?;
 
