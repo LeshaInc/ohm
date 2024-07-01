@@ -1,4 +1,5 @@
-//! Reexports [`glam`] and adds some additional types like [`Rect`] and [`URect`].
+//! Reexports [`glam`] and adds some additional types like [`Rect`] and
+//! [`URect`].
 
 mod rect;
 

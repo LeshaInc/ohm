@@ -7,9 +7,11 @@ use std::path::{Path, PathBuf};
 
 use crate::{Error, ErrorKind, Result};
 
-/// Path to an asset, consisting of a scheme and actual path. Example: `file:path/to/image.png`.
+/// Path to an asset, consisting of a scheme and actual path. Example:
+/// `file:path/to/image.png`.
 ///
-/// Can be owned ([`AssetPath<'static>`]), or borrowed ([`AssetPath<'a>`]), similar to a [`Cow`].
+/// Can be owned ([`AssetPath<'static>`]), or borrowed ([`AssetPath<'a>`]),
+/// similar to a [`Cow`].
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct AssetPath<'a> {
     str: Cow<'a, str>,
@@ -102,7 +104,8 @@ pub trait AssetSource: Send + Sync + 'static {
     fn load(&self, path: AssetPath<'_>) -> Result<Vec<u8>>;
 }
 
-/// An [`AssetSource`] that delegates to multiple other sources based on path scheme.
+/// A set of [`AssetSource`]'s, that is also an [`AssetSource`] that delegates
+/// to multiple other sources based on path scheme.
 #[derive(Default)]
 pub struct AssetSources {
     sources: HashMap<String, Box<dyn AssetSource>>,
@@ -116,7 +119,8 @@ impl AssetSources {
 
     /// Registers an [`AssetSource`] into the set with the provided scheme.
     ///
-    /// If there was an existing set with the same scheme, it will be overwritten.
+    /// If there was an existing set with the same scheme, it will be
+    /// overwritten.
     pub fn add_source(&mut self, scheme: impl Into<String>, source: impl AssetSource) {
         self.sources.insert(scheme.into(), Box::new(source));
     }
@@ -153,9 +157,11 @@ impl FileAssetSource {
     ///
     /// # Errors
     ///
-    /// Returns [`ErrorKind::Io`] in case of an IO error, such as `not found`, `permission denied`, etc.
+    /// Returns [`ErrorKind::Io`] in case of an IO error, such as `not found`,
+    /// `permission denied`, etc.
     ///
-    /// Returns [`ErrorKind::InvalidPath`] if the provided path does not point to a directory.
+    /// Returns [`ErrorKind::InvalidPath`] if the provided path does not point
+    /// to a directory.
     pub fn new(root: impl Into<PathBuf>) -> Result<FileAssetSource> {
         let root = root.into().canonicalize()?;
 

@@ -80,12 +80,6 @@ fn convert_image(mut image: image::RgbaImage, size: Option<UVec2>) -> ImageData 
         );
     }
 
-    for pixel in image.pixels_mut() {
-        pixel.0[0] = (u16::from(pixel.0[0]) * u16::from(pixel.0[3]) / 255) as u8;
-        pixel.0[1] = (u16::from(pixel.0[1]) * u16::from(pixel.0[3]) / 255) as u8;
-        pixel.0[2] = (u16::from(pixel.0[2]) * u16::from(pixel.0[3]) / 255) as u8;
-    }
-
     ImageData {
         format: ImageFormat::Srgba8,
         size: UVec2::new(image.width(), image.height()),
