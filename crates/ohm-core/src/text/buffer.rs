@@ -651,7 +651,8 @@ impl TextBuffer {
         }
 
         // This implementation is similar to the L2 implementation in `visual_runs()`
-        // but it cannot benefit from a precalculated LevelRun vector so needs to be different.
+        // but it cannot benefit from a precalculated LevelRun vector so needs to be
+        // different.
 
         if num_levels == 0 {
             result.clear();
@@ -681,9 +682,9 @@ impl TextBuffer {
         // For each max level, take all contiguous chunks of
         // levels ≥ max and reverse them
         //
-        // We can do this check with the original levels instead of checking reorderings because all
-        // prior reorderings will have been for contiguous chunks of levels >> max, which will
-        // be a subset of these chunks anyway.
+        // We can do this check with the original levels instead of checking reorderings
+        // because all prior reorderings will have been for contiguous chunks of
+        // levels >> max, which will be a subset of these chunks anyway.
         while min <= max {
             let mut range = 0..0;
             loop {

@@ -1,6 +1,7 @@
 use crate::math::{Affine2, UVec2, Vec2};
 
-/// An axis-aligned rectangle, represented by two corners (uses `u32` for coordinates).
+/// An axis-aligned rectangle, represented by two corners (uses `u32` for
+/// coordinates).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct URect {
     /// A `min` corner (usually top-left).
@@ -24,7 +25,8 @@ impl URect {
     }
 }
 
-/// An axis-aligned rectangle, represented by two corners (uses `f32` for coordinates).
+/// An axis-aligned rectangle, represented by two corners (uses `f32` for
+/// coordinates).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
     /// A `min` corner (usually top-left).
@@ -47,7 +49,8 @@ impl Rect {
         self.max - self.min
     }
 
-    /// Computes the axis-aligned bounding rectangle of `self` transformed by `transform`.
+    /// Computes the axis-aligned bounding rectangle of `self` transformed by
+    /// `transform`.
     pub fn transform(self, transform: &Affine2) -> Rect {
         let mut vertices = [
             self.min,
