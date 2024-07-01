@@ -10,7 +10,7 @@ pub struct URect {
 }
 
 impl URect {
-    /// All zeros ([0,0] - [0,0] rectangle).
+    /// All zeros (`[0,0] - [0,0]` rectangle).
     pub const ZERO: URect = URect::new(UVec2::ZERO, UVec2::ZERO);
 
     /// Creates a new rectangle
@@ -34,7 +34,7 @@ pub struct Rect {
 }
 
 impl Rect {
-    /// All zeros ([0,0] - [0,0] rectangle).
+    /// All zeros (`[0,0] - [0,0]` rectangle).
     pub const ZERO: Rect = Rect::new(Vec2::ZERO, Vec2::ZERO);
 
     /// Creates a new rectangle.
