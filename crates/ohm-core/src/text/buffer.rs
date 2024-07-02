@@ -11,6 +11,19 @@ use crate::text::{
 };
 use crate::Color;
 
+/// Caches all information for text layout (font selection, shaping, etc).
+///
+/// Consists of multiple sections with configurable parameters
+/// (think of it as rich text).
+///
+/// If you need to relayout the same text over and over (for example, when
+/// handling in a UI), it is adviced to write the text only once (using
+/// [`push`](TextBuffer::push)) and persist the [`TextBuffer`], only calling
+/// [`set_max_width`](TextBuffer::set_max_width) and
+/// [`compute_layout`](TextBuffer::compute_layout) when necessary.
+///
+/// Note that currently [`TextBuffer`] does not handle vertical text alignment.
+/// It's easy enough to implement manually.
 #[derive(Debug)]
 pub struct TextBuffer {
     text: String,
@@ -32,20 +45,47 @@ struct Section {
     fonts: SmallVec<[FontId; 2]>,
 }
 
+/// A range of laid out glyphs.
 #[derive(Debug, Clone)]
 pub struct Run {
+    /// Range in the original text.
     pub range: Range<usize>,
+    /// Range in the glyph buffer. See [`TextBuffer::glyphs`].
     pub glyph_range: Range<usize>,
+    /// Index of the text section. Each call to [`TextBuffer::push`] creates a
+    /// new section.
     pub section_idx: usize,
+    /// Unicode Bidi embedding level. Even values represent LTR text, while odd
+    /// represent RTL text.
     pub bidi_level: BidiLevel,
+    /// Whether or not a linebreak is disallowed, allowed, or mandatory after
+    /// this run.
     pub linebreak: Option<BreakOpportunity>,
+    /// ID of the font used by the glyphs of this run.
     pub font: FontId,
+    /// Font size.
     pub font_size: f32,
+    /// Line height (absolute).
+    ///
+    /// Can't be smaller than `line_height`.
     pub line_height: f32,
+    /// Height of the text (ascender + descender) of this run.
     pub text_height: f32,
+    /// Text color.
     pub color: Color,
+    /// Width of the run (not including trailing whitespace).
     pub width: f32,
+    /// Width of the trailing whitespace
     pub trailing_whitespace_width: f32,
+    /// Position of the first glyphs origin in the run, not accounting for its
+    /// [`offset`](ShapedGlyph::offset).
+    ///
+    /// Subsequent glyphs' origins should be
+    /// [`x_advance`](ShapedGlyph::x_advance) pixels away from the previous
+    /// glyph along the X axis.
+    ///
+    /// - First glyph should be rendered at `pos + g[0].offset`
+    /// - Second glyph at `pos + vec2(g[0].x_advance, 0) + g[1].offset`
     pub pos: Vec2,
 }
 
@@ -61,6 +101,7 @@ struct Line {
 }
 
 impl TextBuffer {
+    /// Creates an empty [`TextBuffer`].
     pub fn new() -> TextBuffer {
         TextBuffer {
             text: String::new(),
@@ -76,6 +117,8 @@ impl TextBuffer {
         }
     }
 
+    /// Resets the [`TextBuffer`], making it effectively empty, but keeping the
+    /// memory allocations.
     pub fn reset(&mut self) {
         self.text.clear();
         self.sections.clear();
@@ -89,6 +132,8 @@ impl TextBuffer {
         self.dirty = false;
     }
 
+    /// Adds a section of text with the given attributes to the end of this
+    /// buffer.
     pub fn push(&mut self, attrs: TextAttrs, text: &str) {
         self.text.push_str(text);
         self.sections.push(Section {
@@ -100,10 +145,14 @@ impl TextBuffer {
         self.dirty = true;
     }
 
+    /// Returns the concatenation of all sections pushed so far.
     pub fn text(&self) -> &str {
         &self.text
     }
 
+    /// Sets the maximum text width for linebreaking purposes.
+    ///
+    /// Set to [`f32::INFINITY`] to disable linebreaking.
     pub fn set_max_width(&mut self, max_width: f32) {
         if self.max_width == max_width {
             return;
@@ -113,6 +162,24 @@ impl TextBuffer {
         self.dirty = true;
     }
 
+    /// Computes text layout, turning a list of sections into a list of glyphs
+    /// of specific fonts, ready to be rendered.
+    ///
+    /// Takes a font database (to perform font lookup and on-demand loading),
+    /// and a text shaper.
+    ///
+    /// Text layout is a complex process, which includes:
+    ///
+    ///  - Font fallback: finding fonts which have the necessary glyphs. This is
+    ///    especially important for things like emoji, which requires a separate
+    ///    font.
+    ///
+    ///  - Text shaping: Selecting which glyphs to use and where to place them.
+    ///    This is important for ligatures and complex scripts such as arabic.
+    ///
+    ///  - Unicode bidi algorithm (UAX #9)
+    ///
+    ///  - Unicode linebreak algorithm (UAX #14).
     pub fn compute_layout(&mut self, font_db: &mut dyn FontDatabase, shaper: &mut dyn TextShaper) {
         if !self.dirty {
             return;
@@ -776,10 +843,13 @@ impl TextBuffer {
         }
     }
 
+    /// Returns a list of shaped glyphs, indexed by [`Run::glyph_range`].
     pub fn glyphs(&self) -> &[ShapedGlyph] {
         &self.glyphs
     }
 
+    /// Returns a list of runs (sequences of glyphs on the same line with the
+    /// same font).
     pub fn runs(&self) -> &[Run] {
         &self.runs
     }
