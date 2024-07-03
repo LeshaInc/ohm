@@ -42,7 +42,7 @@ pub struct TextAttrs {
 
     /// Font weight (in other words, how bold it is).
     ///
-    /// Default: [`FontWeight::NORMAL`].
+    /// Default: [`FontWeight::Normal`].
     pub weight: FontWeight,
 
     /// Font width (in other words, how wide it is).
@@ -69,7 +69,7 @@ impl Default for TextAttrs {
             color: Color::BLACK,
             align: TextAlign::Start,
             fonts: FontFamilies::new(FontFamily::sans_serif()),
-            weight: FontWeight::NORMAL,
+            weight: FontWeight::Normal,
             width: FontWidth::Normal,
             style: FontStyle::Normal,
             line_height: LineHeight::Relative(1.2),

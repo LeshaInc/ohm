@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use ohm_core::text::{
-    FontAttrs, FontDatabase, FontFace, FontFamily, FontId, FontStyle, FontWidth,
-};
+use ohm_core::text::{FontAttrs, FontDatabase, FontFace, FontFamily, FontId, FontStyle, FontWidth};
 use ohm_core::{Error, ErrorKind, Result};
 
 #[derive(Debug)]
@@ -33,7 +31,7 @@ impl FontDatabase for SystemFontDatabase {
         self.db
             .query(&fontdb::Query {
                 families: &[fontdb_family(&attrs.family)],
-                weight: fontdb::Weight(attrs.weight.0),
+                weight: fontdb::Weight(attrs.weight.to_number()),
                 stretch: fontdb_stretch(attrs.width),
                 style: fontdb_style(attrs.style),
             })
