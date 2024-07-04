@@ -15,41 +15,77 @@ use crate::{
     Command, DrawList, DrawRect, Error, ErrorKind, Fill, FillPath, ImageId, Result, StrokePath,
 };
 
+/// ID of a GPU-side texture
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub struct TextureId(pub u64);
 
+/// Texture-management commands, implemented by the
+/// [`Renderer`](crate::renderer::Renderer).
 #[derive(Debug)]
 pub enum TextureCommand {
+    /// Create a static (immutable) texture.
     CreateStatic {
+        /// ID of the new texture.
         id: TextureId,
+        /// Image contents.
         data: ImageData,
+        /// Mipmap mode.
         mipmap_mode: MipmapMode,
     },
+    /// Create a dynamic (mutable) texture. The initial contents of the image
+    /// are undefined.
     CreateDynamic {
+        /// ID of the new texture.
         id: TextureId,
+        /// Format.
         format: ImageFormat,
+        /// Size.
         size: UVec2,
+        /// Mipmap mode.
         mipmap_mode: MipmapMode,
     },
+    /// Copy a portion of one texture into another.
     Copy {
+        /// Source texture ID.
         src_id: TextureId,
+        /// Destination texture ID. Must be a dynamic texture.
         dst_id: TextureId,
+        /// Source rectangle.
+        ///
+        /// Must be inside the bounds of the source texture.
         src_rect: URect,
+        /// Destination rectangle.
+        ///
+        /// Can be smaller or larger than the soure rectangle, in which case the
+        /// image will be up/downscaled.
+        ///
+        /// Must be inside the bounds of the destination texture.
         dst_rect: URect,
     },
+    /// Write data to a dynamic texture.
     Write {
+        /// Destination texture ID.
         dst_id: TextureId,
+        /// Destination rectangle.
+        ///
+        /// Must be inside the bounds of the destination texture.
         dst_rect: URect,
+        /// Pixels to write.
         data: ImageData,
     },
+    /// Dispose a texture.
     Free {
+        /// ID of the texture.
         id: TextureId,
     },
 }
 
+/// Whether to enable or disable mipmapping.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum MipmapMode {
+    /// Disable mipmapping, saving on VRAM.
     Disabled,
+    /// Enable mipmapping, improving the visual fidelity when downscaling.
     Enabled,
 }
 
@@ -57,6 +93,14 @@ slotmap::new_key_type! {
     struct AtlasId;
 }
 
+/// Mapping between images (or rasterized glyphs) and the portions of GPU-side
+/// textures where the former are stored.
+///
+/// Multiple images (or rasterized glyphs) can be stored in a single texture.
+/// Such a texture is known as a texture atlas. This is done for images less
+/// than 1024 in any dimension.
+///
+/// Larger images are stored in standalone textures (one texture per image).
 #[derive(Default)]
 pub struct TextureCache {
     images: SlotMap<ImageId, ImageEntry>,
@@ -79,10 +123,14 @@ struct ImageEntry {
     max_size: UVec2,
 }
 
+/// An image, allocated in a texture.
 #[derive(Debug, Clone)]
 pub struct AllocatedImage {
+    /// ID of the texture.
     pub texture: TextureId,
+    /// Size of the entire texture.
     pub texture_size: UVec2,
+    /// Rectangle inside the texture.
     pub rect: URect,
 }
 
@@ -95,22 +143,35 @@ struct GlyphEntry {
     is_empty: bool,
 }
 
+/// A rasterized glyph, allocated in a texture.
 #[derive(Debug, Clone)]
 pub struct AllocatedGlyph {
+    /// ID of the texture.
     pub texture: TextureId,
+    /// Format of the texture.
     pub format: ImageFormat,
+    /// Size of the entire texture.
     pub texture_size: UVec2,
+    /// Rectangle inside the texture.
     pub rect: URect,
+    /// Offset at which the glyph should be rendered relative to its origin.
     pub offset: Vec2,
 }
 
 impl TextureCache {
     const MIN_STANDALONE_SIZE: UVec2 = UVec2::new(1024, 1024);
 
+    /// Creates an empty [`TextureCache`].
     pub fn new() -> TextureCache {
         TextureCache::default()
     }
 
+    /// Adds an image with the provided data to the cache. Returns a
+    /// handle for disposing the image.
+    ///
+    /// The image will be uploaded onto the GPU after calling
+    /// [`load_images`](Self::load_images) and sending the resulting
+    /// commands to the renderer.
     pub fn add_image(&mut self, data: ImageData, mipmap_mode: MipmapMode) -> ImageHandle {
         let id = self.images.insert(ImageEntry {
             path: None,
@@ -126,6 +187,12 @@ impl TextureCache {
         ImageHandle::new(id, self.image_cleanup_queue.clone())
     }
 
+    /// Adds an image with the provided path to the cache. Returns a
+    /// handle for disposing the image.
+    ///
+    /// The image will be loaded from the source during
+    /// [`load_images`](Self::load_images), then uploaded onto the GPU after
+    /// the resulting commands are handled by the renderer.
     pub fn add_image_from_path<'a>(
         &mut self,
         path: impl Into<AssetPath<'a>>,
@@ -161,6 +228,14 @@ impl TextureCache {
         ImageHandle::new(id, self.image_cleanup_queue.clone())
     }
 
+    /// Adds a glyph to the cache. Unlike [`add_image`](Self::load_glyphs), this
+    /// function does not return a disposal handle. Instead, it should be
+    /// called every frame, before `cleanup`, otherwise the glyph will be
+    /// removed.
+    ///
+    /// The glyph will be rasterized and uploaded onto the GPU after calling
+    /// [`load_glyphs`](Self::load_glyphs) and sending the resulting
+    /// commands to the renderer.
     pub fn add_glyph(&mut self, key: GlyphKey) {
         self.glyphs.entry(key).or_insert(GlyphEntry {
             used: true,
@@ -171,12 +246,14 @@ impl TextureCache {
         });
     }
 
+    /// Adds all glyphs, referenced by the the provided [`DrawList`]'s.
     pub fn add_glyphs_from_lists(&mut self, lists: &[DrawList]) {
         for list in lists {
             self.add_glyphs_from_commands(list.commands);
         }
     }
 
+    /// Adds all glyphs, referenced by the provided [`Command`]'s.
     pub fn add_glyphs_from_commands(&mut self, commands: &[Command]) {
         for command in commands {
             match command {
@@ -194,12 +271,20 @@ impl TextureCache {
         }
     }
 
+    /// Sets the requested sizes of all images, referenced by the provided
+    /// [`DrawList`]'s.
+    ///
+    /// This is used to larger versions of an image, if possible (e.g. for SVG).
     pub fn set_image_sizes_from_lists(&mut self, path_cache: &mut PathCache, lists: &[DrawList]) {
         for list in lists {
             self.set_image_sizes_from_commands(path_cache, list.commands, Affine2::IDENTITY);
         }
     }
 
+    /// Sets the requested sizes of all images, referenced by the provided
+    /// [`Command`]'s. Also accepts a `transform` to apply.
+    ///
+    /// This is used to larger versions of an image, if possible (e.g. for SVG).
     pub fn set_image_sizes_from_commands(
         &mut self,
         path_cache: &mut PathCache,
@@ -270,6 +355,9 @@ impl TextureCache {
         }
     }
 
+    /// Loads the images from the source, decodes them, and writes the commands
+    /// for uploading them onto the GPU. Commands are later handled by the
+    /// renderer.
     pub fn load_images(
         &mut self,
         source: &dyn AssetSource,
@@ -330,6 +418,8 @@ impl TextureCache {
         Ok(())
     }
 
+    /// Loads the fonts, rasterizes the glyphs, and writes the commands for
+    /// uploading then onto the GPU. Commands are later handled by the renderer.
     pub fn load_glyphs(
         &mut self,
         font_db: &dyn FontDatabase,
@@ -375,6 +465,8 @@ impl TextureCache {
         Ok(())
     }
 
+    /// Returns the location of an image (portion of a texture), or `None` if
+    /// the image doesn't exist or hasn't been loaded yet.
     pub fn get_image(&self, id: ImageId) -> Option<AllocatedImage> {
         self.images.get(id).and_then(|entry| {
             let (texture, texture_size) =
@@ -392,6 +484,9 @@ impl TextureCache {
         })
     }
 
+    /// Returns the location of an glyph (portion of a texture), or `None` if
+    /// the glyph is whitespace, missing from the font, the font itself is
+    /// missing, or the glyph hasn't been rasterized yet.
     pub fn get_glyph(&self, key: &GlyphKey) -> Option<AllocatedGlyph> {
         self.glyphs.get(key).and_then(|entry| {
             let atlas_id = entry.alloc_id?.0;
@@ -406,6 +501,9 @@ impl TextureCache {
         })
     }
 
+    /// Performs cleanup, removing disposed images and all glyphs, unused since
+    /// last call to [`cleanup`](Self::cleanup). To mark a glyph as used, call
+    /// [`get_glyph`](Self::get_glyph).
     pub fn cleanup(&mut self, commands: &mut Vec<TextureCommand>) {
         while let Some(image_id) = self.image_cleanup_queue.pop() {
             let Some(image) = self.images.remove(image_id) else {
