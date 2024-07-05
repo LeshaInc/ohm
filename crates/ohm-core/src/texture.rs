@@ -1,3 +1,5 @@
+//! GPU-side textures
+
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -19,7 +21,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub struct TextureId(pub u64);
 
-/// Texture-management commands, implemented by the
+/// Texture management commands, implemented by the
 /// [`Renderer`](crate::renderer::Renderer).
 #[derive(Debug)]
 pub enum TextureCommand {
