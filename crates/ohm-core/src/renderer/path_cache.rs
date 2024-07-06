@@ -26,13 +26,18 @@ enum Key {
     Stroke(PathKey, StrokeOptions),
 }
 
+/// A triangulated mesh.
 #[derive(Debug)]
 pub struct Mesh {
+    /// Bounding rectangle, or `None` if the mesh is empty.
     pub bounding_rect: Option<Rect>,
+    /// List of vertices.
     pub vertices: Vec<Vertex>,
+    /// List of indices, where each triplet defines a triangle.
     pub indices: Vec<u32>,
 }
 
+/// Cache for triangulated vector paths.
 pub struct PathCache {
     lru: LruCache<Key, Mesh>,
     stroke_tessellator: StrokeTessellator,
@@ -40,6 +45,7 @@ pub struct PathCache {
 }
 
 impl PathCache {
+    /// Creates an empty cache.
     pub fn new() -> PathCache {
         PathCache {
             lru: LruCache::new(NonZeroUsize::new(CAPACITY).unwrap()),
@@ -48,6 +54,7 @@ impl PathCache {
         }
     }
 
+    /// Fills a path, returning the mesh, or takes it from the cache.
     pub fn fill(&mut self, path: &Path, options: &FillOptions) -> &Mesh {
         let path_key = PathKey(path.events().as_ptr() as *const _);
         self.lru.get_or_insert(Key::Fill(path_key, *options), || {
@@ -80,6 +87,7 @@ impl PathCache {
         })
     }
 
+    /// Strokes a path, returning the mesh, or takes it from the cache.
     pub fn stroke(&mut self, path: &Path, options: &StrokeOptions) -> &Mesh {
         let path_key = PathKey(path.events().as_ptr() as *const _);
         self.lru.get_or_insert(Key::Stroke(path_key, *options), || {
@@ -224,7 +232,7 @@ fn lyon_stroke_options(options: &StrokeOptions) -> lyon_tessellation::StrokeOpti
         .with_line_cap(lyon_line_cap(options.line_cap))
         .with_line_join(lyon_line_join(options.line_join))
         .with_line_width(options.line_width)
-        .with_miter_limit(options.mitter_limit)
+        .with_miter_limit(options.miter_limit)
 }
 
 fn lyon_line_cap(cap: LineCap) -> lyon_tessellation::LineCap {
