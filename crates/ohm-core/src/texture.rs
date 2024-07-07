@@ -12,7 +12,7 @@ use crate::asset::{AssetPath, AssetSource};
 use crate::image::{ImageData, ImageDecoder, ImageFormat, ImageHandle};
 use crate::math::{Affine2, URect, UVec2, Vec2};
 use crate::renderer::PathCache;
-use crate::text::{FontDatabase, GlyphKey, Rasterizer, SubpixelBin};
+use crate::text::{FontDatabase, FontRasterizer, GlyphKey, SubpixelBin};
 use crate::{
     Command, DrawList, DrawRect, Error, ErrorKind, Fill, FillPath, ImageId, Result, StrokePath,
 };
@@ -425,7 +425,7 @@ impl TextureCache {
     pub fn load_glyphs(
         &mut self,
         font_db: &dyn FontDatabase,
-        rasterizer: &mut dyn Rasterizer,
+        rasterizer: &mut dyn FontRasterizer,
         commands: &mut Vec<TextureCommand>,
     ) -> Result<()> {
         for (glyph_key, glyph) in &mut self.glyphs {

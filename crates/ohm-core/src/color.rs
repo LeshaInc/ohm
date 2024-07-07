@@ -19,7 +19,7 @@ impl Color {
     /// Pure black color.
     pub const BLACK: Color = Color::rgb(0.0, 0.0, 0.0);
     /// Fully transparent color.
-    pub const TRANSPAENT: Color = Color::rgba(0.0, 0.0, 0.0, 0.0);
+    pub const TRANSPARENT: Color = Color::rgba(0.0, 0.0, 0.0, 0.0);
 
     /// Creates a color given an RGBA fourtuplet in linear sRGB color space.
     ///

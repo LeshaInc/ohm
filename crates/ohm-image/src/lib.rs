@@ -1,6 +1,6 @@
 use ohm_core::image::{ImageData, ImageDecoder, ImageFormat};
 use ohm_core::math::{UVec2, Vec2};
-use ohm_core::text::{FontFace, GlyphId, RasterizedGlyph, Rasterizer, SubpixelBin};
+use ohm_core::text::{FontFace, GlyphId, RasterizedGlyph, FontRasterizer, SubpixelBin};
 use ohm_core::{Error, ErrorKind, Result};
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -40,7 +40,7 @@ impl ImageDecoder for ImageImageDecoder {
 
 pub struct EmbeddedImageRasterizer;
 
-impl Rasterizer for EmbeddedImageRasterizer {
+impl FontRasterizer for EmbeddedImageRasterizer {
     fn rasterize(
         &mut self,
         font_face: &FontFace,

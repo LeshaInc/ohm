@@ -1,3 +1,5 @@
+//! A utility for implementing rasterization based GPU-renderers
+
 use std::fmt;
 use std::ops::Range;
 
@@ -11,16 +13,28 @@ use crate::{
     FillPath, StrokePath,
 };
 
+/// Special `instance_id` which corresponds to just filling the triangles with
+/// the texture, without looking into the `instances` array.
 pub const INSTANCE_FILL: u32 = 4294967295;
+/// Same as `INSTANCE_FILL`, but only uses the R channel from the texture,
+/// interpreting it as grayscale. Used for glyph rendering.
 pub const INSTANCE_FILL_GRAY: u32 = 4294967294;
 
+/// A 2D vertex
 #[repr(packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct Vertex {
+    /// Position in screen space
     pub pos: Vec2,
+    /// Position in object space. For example, a rectangle without a shadow will
+    /// have `local_pos` ranging from `[0, 0]` to `[width, height]`.
     pub local_pos: Vec2,
+    /// Normalized texture coordinates.
     pub tex: Vec2,
+    /// Linear sRGB with premultiplied alpha.
     pub color: Vec4,
+    /// Index into the `instances` array, or one of special values:
+    /// [`INSTANCE_FILL`], [`INSTANCE_FILL_GRAY`].
     pub instance_id: u32,
 }
 
@@ -36,55 +50,87 @@ struct Quad {
     instance_id: u32,
 }
 
+/// An instance, which specifies the parameters of complex shapes, such as
+/// rounded rectangles with shadows.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Instance {
+    /// Corner radii: top-left, top-right, bottom-right, bottom-left.
     pub corner_radii: Vec4,
+    /// Border color (linear sRGB with premultiplied alpha).
     pub border_color: Vec4,
+    /// Shadow color (linear sRGB with premultiplied alpha).
     pub shadow_color: Vec4,
+    /// Shadow offset.
     pub shadow_offset: Vec2,
+    /// Size of the rectangle (original width and height, user specified)
     pub size: Vec2,
+    /// Border width (i.e. thickness).
     pub border_width: f32,
+    /// Shadow blur radius.
     pub shadow_blur_radius: f32,
+    /// Shadow spread radius.
     pub shadow_spread_radius: f32,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
-pub struct FramebufferId(pub u64);
-
+/// A batch of triangles
 #[derive(Debug)]
 pub struct Batch {
+    /// Whether the triangles should be rendered in clear mode, i.e. without
+    /// alpha blending, just setting the colors. This has the effect of clearing
+    /// the canvas if you set the color to transparent (or white, black, or
+    /// whatever you consider a "clear color").
     pub clear: bool,
+    /// Whether this batch should perform a MSAA resolve operation, in case of
+    /// MSAA intermediates. This would allow you to later sample the
+    /// intermediate as a source.
     pub msaa_resolve: bool,
+    /// Render target (a surface or an intermediate texture).
     pub target: Target,
+    /// Source texture (could also be an intermediate).
     pub source: Source,
+    /// Range into the index buffer.
     pub index_range: Range<u32>,
+    /// Range into the vertex buffer.
     pub vertex_range: Range<u32>,
+    /// Index of the instance buffer to use.
     pub instance_buffer_id: usize,
 }
 
+/// An intermediate texture.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Intermediate {
+    /// Size.
     pub size: UVec2,
+    /// Whether to enable MSAA.
     pub msaa: bool,
 }
 
+/// Index of an intermediate texture.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct IntermediateId(pub usize);
 
+/// Render target.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Target {
+    /// Surface (i.e. a window).
     Surface(SurfaceId),
+    /// Intermediate texture.
     Intermediate(IntermediateId),
 }
 
+/// Source texture
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Source {
+    /// Pure white `(1, 1, 1, 1)` texture
     White,
+    /// A regular texture.
     Texture(TextureId),
+    /// An intermediate texture.
     Intermediate(IntermediateId),
 }
 
+/// Scratch buffers used by the [`Batcher`].
 #[derive(Default)]
 pub struct BatcherScratch {
     vertices: Vec<Vertex>,
@@ -96,10 +142,12 @@ pub struct BatcherScratch {
 }
 
 impl BatcherScratch {
+    /// Creates an empty set of buffers.
     pub fn new() -> BatcherScratch {
         BatcherScratch::default()
     }
 
+    /// Clears all of the buffers.
     pub fn clear(&mut self) {
         self.vertices.clear();
         self.indices.clear();
@@ -116,6 +164,10 @@ impl fmt::Debug for BatcherScratch {
     }
 }
 
+/// A utility for implementing rasterization based GPU-renderers
+///
+/// Takes in [`DrawList`]'s, and returns a list of [`Batch`]'es, which can be
+/// directly mapped to draw calls.
 pub struct Batcher<'a> {
     texture_cache: &'a TextureCache,
     vertices: &'a mut Vec<Vertex>,
@@ -135,6 +187,10 @@ pub struct Batcher<'a> {
 }
 
 impl Batcher<'_> {
+    /// Creates a new [`Batcher`] with the provided scratch space for various
+    /// buffers, texture and path cache, and `max_instances_per_buffer` which
+    /// specifies the maximum size of instance buffers (useful if uniform buffer
+    /// space is limited).
     pub fn new<'a>(
         scratch: &'a mut BatcherScratch,
         texture_cache: &'a TextureCache,
@@ -161,6 +217,7 @@ impl Batcher<'_> {
         }
     }
 
+    /// Prepare the batches from the provided drawlists.
     pub fn prepare(&mut self, draw_list: &DrawList) {
         if draw_list.commands.is_empty() {
             return;
@@ -177,22 +234,27 @@ impl Batcher<'_> {
         self.flush();
     }
 
+    /// Returns the sequence of batches.
     pub fn batches(&self) -> &[Batch] {
         self.batches
     }
 
+    /// Returns the vertex buffer.
     pub fn vertices(&self) -> &[Vertex] {
         self.vertices
     }
 
+    /// Returns the index buffer.
     pub fn indices(&self) -> &[u32] {
         self.indices
     }
 
+    /// Returns the instance buffer.
     pub fn instances(&self) -> &[Instance] {
         self.instances
     }
 
+    /// Returns a list of intermediate textures.
     pub fn intermediates(&self) -> &[Intermediate] {
         self.intermediates
     }
@@ -372,12 +434,12 @@ impl Batcher<'_> {
             border_color: rect
                 .border
                 .map(|b| b.color)
-                .unwrap_or(Color::TRANSPAENT)
+                .unwrap_or(Color::TRANSPARENT)
                 .into(),
             shadow_color: rect
                 .shadow
                 .map(|s| s.color)
-                .unwrap_or(Color::TRANSPAENT)
+                .unwrap_or(Color::TRANSPARENT)
                 .into(),
             shadow_offset,
             size: rect.size,
@@ -513,7 +575,7 @@ impl Batcher<'_> {
         self.cmd_clear_rect(&ClearRect {
             pos: Vec2::ZERO,
             size: rect.size(),
-            color: Color::TRANSPAENT,
+            color: Color::TRANSPARENT,
         });
         self.transform_stack.pop();
 

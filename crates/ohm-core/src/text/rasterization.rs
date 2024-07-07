@@ -55,7 +55,7 @@ pub struct RasterizedGlyph {
 
 /// A glyph rasterizer. Takes information from a font face and returns a raster
 /// image for a given glyph at a given size and subpixel offset.
-pub trait Rasterizer {
+pub trait FontRasterizer {
     /// Rasterizes a given glyph, returning `None` if there is no such glyph, or
     /// if the glyph is whitespace.
     fn rasterize(
@@ -71,7 +71,7 @@ pub trait Rasterizer {
 /// using one of the underlying rasterizers, trying them in order.
 #[derive(Default)]
 pub struct FontRasterizers {
-    rasterizers: Vec<Box<dyn Rasterizer>>,
+    rasterizers: Vec<Box<dyn FontRasterizer>>,
 }
 
 impl FontRasterizers {
@@ -80,13 +80,13 @@ impl FontRasterizers {
         FontRasterizers::default()
     }
 
-    /// Adds a [`FontRasterier`] to the list.
-    pub fn add_rasterizer<R: Rasterizer + 'static>(&mut self, rasterizer: R) {
+    /// Adds a [`FontRasterizer`] to the list.
+    pub fn add_rasterizer<R: FontRasterizer + 'static>(&mut self, rasterizer: R) {
         self.rasterizers.push(Box::new(rasterizer));
     }
 }
 
-impl Rasterizer for FontRasterizers {
+impl FontRasterizer for FontRasterizers {
     fn rasterize(
         &mut self,
         font_face: &FontFace,
