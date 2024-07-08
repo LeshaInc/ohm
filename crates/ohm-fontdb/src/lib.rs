@@ -1,8 +1,13 @@
+#![warn(missing_docs)]
+
+//! Provides integration with [`fontdb`] crate, giving access to system fonts.
+
 use std::collections::HashMap;
 
 use ohm_core::text::{FontAttrs, FontDatabase, FontFace, FontFamily, FontId, FontStyle, FontWidth};
 use ohm_core::{Error, ErrorKind, Result};
 
+/// A database of system fonts.
 #[derive(Debug)]
 pub struct SystemFontDatabase {
     db: fontdb::Database,
@@ -10,6 +15,7 @@ pub struct SystemFontDatabase {
 }
 
 impl SystemFontDatabase {
+    /// Creates a database of system fonts, looking up in system folders.
     pub fn new() -> SystemFontDatabase {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();

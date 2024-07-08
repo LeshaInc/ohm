@@ -1,8 +1,13 @@
+#![warn(missing_docs)]
+
+//! Provides integration with [`zeno`] crate --- a portable font rasterizer.
+
 use ohm_core::image::{ImageData, ImageFormat};
 use ohm_core::math::{IVec2, UVec2};
-use ohm_core::text::{FontFace, GlyphId, RasterizedGlyph, FontRasterizer, SubpixelBin};
+use ohm_core::text::{FontFace, FontRasterizer, GlyphId, RasterizedGlyph, SubpixelBin};
 use zeno::{Command, Format, Mask, PathBuilder, Scratch, Transform};
 
+/// Font rasterizer, backed by [`zeno`].
 #[derive(Default)]
 pub struct ZenoRasterizer {
     scratch: Scratch,
@@ -10,6 +15,7 @@ pub struct ZenoRasterizer {
 }
 
 impl ZenoRasterizer {
+    /// Creates a [`ZenoRasterizer`].
     pub fn new() -> ZenoRasterizer {
         ZenoRasterizer::default()
     }
@@ -50,8 +56,7 @@ impl FontRasterizer for ZenoRasterizer {
             .chunks(placement.width as usize)
             .rev()
             .flatten()
-            .map(|&v| ((v as f32 / 255.0).powf(0.5) * 255.0) as u8)
-            // .copied()
+            .map(|&v| ((v as f32 / 255.0).powf(0.5) * 255.0) as u8) // TODO: why is this here?
             .collect::<Vec<_>>();
 
         let offset =

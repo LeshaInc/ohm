@@ -1,3 +1,8 @@
+#![warn(missing_docs)]
+
+//! Provides integration with [`freetype`] crate --- a font
+//! rasterizer, commonly used in GNU/Linux.
+
 use std::borrow::Borrow;
 use std::collections::{hash_map, HashMap};
 use std::sync::Arc;
@@ -17,12 +22,14 @@ impl Borrow<[u8]> for FaceBuffer {
     }
 }
 
+/// Font rasterizer, backed by [`freetype`].
 pub struct FreetypeRasterizer {
     faces: HashMap<FontId, Face<FaceBuffer>>,
     library: Option<Library>,
 }
 
 impl FreetypeRasterizer {
+    /// Creates a new [`FreetypeRasterizer`], initializing the FreeType library.
     pub fn new() -> FreetypeRasterizer {
         FreetypeRasterizer {
             faces: HashMap::default(),

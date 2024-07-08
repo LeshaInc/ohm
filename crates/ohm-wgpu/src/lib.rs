@@ -1,3 +1,10 @@
+#![warn(missing_docs)]
+
+//! Renderer implementation, backed by [`wgpu`].
+//!
+//! Designed to be compatible with most hardware, so doesn't require any
+//! [`wgpu`] features, compute shaders, crazy limits, etc.
+
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
@@ -17,6 +24,7 @@ use wgpu::*;
 
 const MAX_INSTANCES_PER_BUFFER: usize = 128;
 
+/// Renderer implementation, backed by [`wgpu`].
 #[derive(Debug)]
 pub struct WgpuRenderer {
     instance: Instance,
@@ -24,6 +32,7 @@ pub struct WgpuRenderer {
 }
 
 impl WgpuRenderer {
+    /// Creates a new [`WgpuRenderer`], initializing the device.
     pub fn new() -> WgpuRenderer {
         let instance = Instance::new(Default::default());
         WgpuRenderer {

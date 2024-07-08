@@ -1,9 +1,14 @@
+#![warn(missing_docs)]
+
+//! Provides integration with [`resvg`] crate --- a portable SVG renderer.
+
 use ohm_core::image::{ImageData, ImageDecoder, ImageFormat};
 use ohm_core::math::UVec2;
 use ohm_core::{Error, ErrorKind, Result};
 use resvg::tiny_skia::Pixmap;
 use resvg::usvg::{Options, Transform, Tree};
 
+/// Image decoder, backed by [`resvg`]. Supports SVG and SVGZ formats.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ResvgImageDecoder;
 

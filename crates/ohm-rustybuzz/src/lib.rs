@@ -1,3 +1,8 @@
+#![warn(missing_docs)]
+
+//! Provides integration with [`rustybuzz`] crate --- a portable text shaper
+//! (Rust port of HarfBuzz).
+
 use std::collections::{hash_map, HashMap};
 use std::fmt;
 use std::sync::Arc;
@@ -14,6 +19,7 @@ self_cell::self_cell! {
     }
 }
 
+/// A text shaper, backed by [`rustybuzz`].
 #[derive(Default)]
 pub struct RustybuzzShaper {
     buffer: UnicodeBuffer,
@@ -21,6 +27,7 @@ pub struct RustybuzzShaper {
 }
 
 impl RustybuzzShaper {
+    /// Creates a new [`RustybuzzShaper`].
     pub fn new() -> RustybuzzShaper {
         RustybuzzShaper::default()
     }

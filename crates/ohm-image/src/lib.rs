@@ -1,8 +1,14 @@
+#![warn(missing_docs)]
+
+//! Provides integration with [`image`] crate, allowing to decode raster images,
+//! supported by [`image`], including font embedded images (e.g. emoji).
+
 use ohm_core::image::{ImageData, ImageDecoder, ImageFormat};
 use ohm_core::math::{UVec2, Vec2};
-use ohm_core::text::{FontFace, GlyphId, RasterizedGlyph, FontRasterizer, SubpixelBin};
+use ohm_core::text::{FontFace, FontRasterizer, GlyphId, RasterizedGlyph, SubpixelBin};
 use ohm_core::{Error, ErrorKind, Result};
 
+/// Image decoder, backed by [`image`] crate.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ImageImageDecoder;
 
@@ -38,6 +44,7 @@ impl ImageDecoder for ImageImageDecoder {
     }
 }
 
+/// Rasterizer of embedded glyph images, backed by [`image`].
 pub struct EmbeddedImageRasterizer;
 
 impl FontRasterizer for EmbeddedImageRasterizer {
