@@ -11,7 +11,7 @@ ohm-freetype = { workspace = true, optional = true }
 ohm-image = { workspace = true, optional = true }
 ohm-resvg = { workspace = true, optional = true }
 ohm-rustybuzz = { workspace = true, optional = true }
-ohm-wgpu = { workspace = true, optional = true }
+# ohm-wgpu = { workspace = true, optional = true }
 ohm-zeno = { workspace = true, optional = true }
 
 bumpalo.workspace = true
@@ -30,7 +30,7 @@ default = [
   "image/png",
   "resvg",
   "rustybuzz",
-  "wgpu",
+  # "wgpu",
   "zeno",
 ]
 
@@ -39,7 +39,7 @@ freetype = ["dep:ohm-freetype"]
 image = ["dep:ohm-image", "dep:image"]
 resvg = ["dep:ohm-resvg"]
 rustybuzz = ["dep:ohm-rustybuzz"]
-wgpu = ["dep:ohm-wgpu"]
+# wgpu = ["dep:ohm-wgpu"]
 zeno = ["dep:ohm-zeno"]
 
 [[example]]
