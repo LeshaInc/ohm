@@ -148,12 +148,12 @@ impl AssetSource for AssetSources {
 ///
 /// Note that paths cannot escape the specified root directory.
 #[derive(Debug)]
-pub struct FileAssetSource {
+pub struct DirAssetSource {
     root: PathBuf,
 }
 
-impl FileAssetSource {
-    /// Creates a [`FileAssetSource`] with a specified root directory.
+impl DirAssetSource {
+    /// Creates a [`DirAssetSource`] with a specified root directory.
     ///
     /// # Errors
     ///
@@ -162,7 +162,7 @@ impl FileAssetSource {
     ///
     /// Returns [`ErrorKind::InvalidPath`] if the provided path does not point
     /// to a directory.
-    pub fn new(root: impl Into<PathBuf>) -> Result<FileAssetSource> {
+    pub fn new(root: impl Into<PathBuf>) -> Result<DirAssetSource> {
         let root = root.into().canonicalize()?;
 
         if !root.is_dir() {
@@ -172,11 +172,11 @@ impl FileAssetSource {
             ));
         }
 
-        Ok(FileAssetSource { root })
+        Ok(DirAssetSource { root })
     }
 }
 
-impl AssetSource for FileAssetSource {
+impl AssetSource for DirAssetSource {
     fn load(&self, path: AssetPath<'_>) -> Result<Vec<u8>> {
         let mut file_path = self.root.clone();
         file_path.push(path.path());

@@ -20,7 +20,7 @@ pub struct Graphics {
     ///
     /// By default, the list will be empty. You will have to add your own
     /// sources (e.g.
-    /// [`FileAssetSource`](crate::asset::FileAssetSource)).
+    /// [`DirAssetSource`](crate::asset::DirAssetSource)).
     pub asset_sources: AssetSources,
     /// Image decoders
     ///
