@@ -10,25 +10,53 @@ use crate::text::{
 use crate::texture::TextureCache;
 use crate::{DrawList, Encoder, Result};
 
+/// A convenience structure, encompassing all graphics related objects.
+///
+/// You can create it using the default constructor, or manually.
 pub struct Graphics {
+    /// Renderer.
     pub renderer: Box<dyn Renderer>,
+    /// Asset sources (for loading images).
+    ///
+    /// By default, the list will be empty. You will have to add your own
+    /// sources (e.g.
+    /// [`FileAssetSource`](crate::asset::FileAssetSource)).
     pub asset_sources: AssetSources,
+    /// Image decoders
+    ///
+    /// This will include `image` and `resvg` based decoders, if the
+    /// corresponding features are enabled.
     pub image_decoders: ImageDecoders,
+    /// Texture cache, used for allocating space for images and glyphs in GPU
+    /// textures.
     pub texture_cache: TextureCache,
+    /// Path cache, which stores triangualted path strokes and fills.
     pub path_cache: PathCache,
+    /// Font database.
+    ///
+    /// By default, this will be a [`DefaultFontDatabase`].
     pub font_db: Box<dyn FontDatabase>,
+    /// Font rasterizers.
+    ///
+    /// By default, this will include `image`, `freetype`, and `zeno`
+    /// rasterizers.
     pub font_rasterizers: FontRasterizers,
+    /// Text shaper
+    ///
+    /// By default, this will be a [`DefaultTextShaper`].
     pub text_shaper: Box<dyn TextShaper>,
 }
 
 #[cfg(feature = "wgpu")]
 impl Graphics {
+    /// Creates a [`Graphics`] instance with `wgpu` based renderer.
     pub fn new_wgpu() -> Graphics {
         Graphics::new(crate::renderer::WgpuRenderer::new())
     }
 }
 
 impl Graphics {
+    /// Creates a [`Graphics`] instance with the specified renderer.
     pub fn new<R: Renderer>(renderer: R) -> Graphics {
         let mut graphics = Graphics {
             renderer: Box::new(renderer),
@@ -68,6 +96,8 @@ impl Graphics {
             .add_rasterizer(ohm_zeno::ZenoRasterizer::new());
     }
 
+    /// Creates a command encoder, for encoding a [`DrawList`] for a specific
+    /// surface.
     pub fn create_encoder<'g, 's>(
         &'g mut self,
         scratch: &'s EncoderScratch,
@@ -82,6 +112,7 @@ impl Graphics {
         )
     }
 
+    /// Renders the provided [`DrawList`]'s.
     pub fn render(&mut self, draw_lists: &[DrawList]) -> Result<()> {
         {
             let mut commands = Vec::new();
@@ -105,6 +136,7 @@ impl Graphics {
             .render(&self.texture_cache, &mut self.path_cache, draw_lists)
     }
 
+    /// Presents the frame to all touched surfaces.
     pub fn present(&mut self) -> Result<()> {
         self.renderer.present()
     }

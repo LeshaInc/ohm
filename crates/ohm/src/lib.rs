@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 //! 2D rendering library, intended for user interfaces.
 //!
 //! # Features
@@ -63,6 +65,9 @@
 pub use ohm_core::*;
 
 pub mod text {
+    //! Types and traits related font loading, text shaping and layout and glyph
+    //! rasterization
+
     pub use ohm_core::text::*;
     use ohm_core::Result;
     #[cfg(feature = "fontdb")]
@@ -72,15 +77,21 @@ pub mod text {
     #[cfg(feature = "zeno")]
     pub use ohm_zeno::ZenoRasterizer;
 
+    /// Default text shaper, based on cargo features
+    ///
+    /// When `rustybuzz` feature is enabled, uses [`RustybuzzShaper`].
+    ///
+    /// Otherwise uses [`DummyTextShaper`].
     #[derive(Debug, Default)]
     pub struct DefaultTextShaper {
         #[cfg(feature = "rustybuzz")]
-        inner: ohm_rustybuzz::RustybuzzShaper,
+        inner: RustybuzzShaper,
         #[cfg(not(feature = "rustybuzz"))]
         inner: DummyTextShaper,
     }
 
     impl DefaultTextShaper {
+        /// Creates a new default text shaper.
         pub fn new() -> DefaultTextShaper {
             DefaultTextShaper::default()
         }
@@ -99,15 +110,21 @@ pub mod text {
         }
     }
 
+    /// Default font database, based on cargo features
+    ///
+    /// When `fontdb` feature is enabled, uses [`SystemFontDatabase`].
+    ///
+    /// Otherwise uses [`DummyFontDatabase`].
     #[derive(Debug, Default)]
     pub struct DefaultFontDatabase {
         #[cfg(feature = "fontdb")]
-        inner: ohm_fontdb::SystemFontDatabase,
+        inner: SystemFontDatabase,
         #[cfg(not(feature = "fontdb"))]
         inner: DummyFontDatabase,
     }
 
     impl DefaultFontDatabase {
+        /// Creates a new default font database.
         pub fn new() -> DefaultFontDatabase {
             DefaultFontDatabase::default()
         }
@@ -133,6 +150,8 @@ pub mod text {
 }
 
 pub mod renderer {
+    //! Renderer trait, helpers, and implementations.
+
     pub use ohm_core::renderer::*;
     #[cfg(feature = "wgpu")]
     pub use ohm_wgpu::WgpuRenderer;
