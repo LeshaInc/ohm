@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ohm::asset::FileAssetSource;
+use ohm::asset::DirAssetSource;
 use ohm::math::{vec2, Affine2, Rect, UVec2, Vec2};
 use ohm::renderer::SurfaceId;
 use ohm::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
@@ -18,7 +18,7 @@ fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
 
     encoder
         .rect(vec2(50.0, 50.0), size - vec2(100.0, 100.0))
-        .color(Color::TRANSPAENT)
+        .color(Color::TRANSPARENT)
         .border(Color::rgb(1.0, 0.0, 0.0), 1.0);
 
     text_buffer.set_max_width(size.x - 100.0);
@@ -144,7 +144,7 @@ impl ApplicationHandler for App {
         path.push("../../examples");
         graphics
             .asset_sources
-            .add_source("file", FileAssetSource::new(path).unwrap());
+            .add_source("file", DirAssetSource::new(path).unwrap());
 
         let surface = graphics
             .renderer
