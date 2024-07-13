@@ -56,7 +56,7 @@ impl FontRasterizer for ZenoRasterizer {
             .chunks(placement.width as usize)
             .rev()
             .flatten()
-            .map(|&v| ((v as f32 / 255.0).powf(0.5) * 255.0) as u8) // TODO: why is this here?
+            .copied()
             .collect::<Vec<_>>();
 
         let offset =
