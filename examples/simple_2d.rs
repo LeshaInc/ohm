@@ -6,7 +6,7 @@ use ohm::math::{vec2, Affine2, Rect, UVec2, Vec2};
 use ohm::renderer::SurfaceId;
 use ohm::text::{FontFamilies, FontFamily, LineHeight, TextAlign, TextAttrs, TextBuffer};
 use ohm::texture::MipmapMode;
-use ohm::{Color, Encoder, EncoderScratch, Graphics, PathBuilder, Shadow};
+use ohm::{Color, CornerRadii, Encoder, EncoderScratch, Graphics, PathBuilder, Scissor, Shadow};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
@@ -29,6 +29,11 @@ fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
         let mut layer = encoder
             .layer()
             .tint(Color::rgba(0.5, 0.5, 0.5, 0.5))
+            .scissor(Scissor {
+                pos: vec2(500.0, 0.0),
+                size: vec2(300.0, 300.0),
+                corner_radii: CornerRadii::default(),
+            })
             .transform(Affine2::from_scale_angle_translation(
                 vec2(2.0, 2.0),
                 30f32.to_radians(),

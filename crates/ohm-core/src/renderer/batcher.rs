@@ -10,7 +10,7 @@ use crate::text::{GlyphKey, SubpixelBin};
 use crate::texture::{TextureCache, TextureId};
 use crate::{
     ClearRect, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill,
-    FillPath, StrokePath,
+    FillPath, Scissor, StrokePath,
 };
 
 /// Special `instance_id` which corresponds to just filling the triangles with
@@ -226,7 +226,13 @@ impl Batcher<'_> {
         self.set_target(Target::Surface(draw_list.surface));
 
         if Self::should_enable_msaa(draw_list.commands) {
-            self.draw_intermediate_layer(draw_list.commands, Color::WHITE, Affine2::IDENTITY, true);
+            self.draw_intermediate_layer(
+                draw_list.commands,
+                Color::WHITE,
+                Affine2::IDENTITY,
+                None,
+                true,
+            );
         } else {
             self.dispatch_commands(draw_list.commands);
         }
@@ -540,7 +546,13 @@ impl Batcher<'_> {
         }
 
         let enable_msaa = Self::should_enable_msaa(layer.commands);
-        self.draw_intermediate_layer(layer.commands, layer.tint, layer.transform, enable_msaa);
+        self.draw_intermediate_layer(
+            layer.commands,
+            layer.tint,
+            layer.transform,
+            layer.scissor,
+            enable_msaa,
+        );
     }
 
     fn draw_intermediate_layer(
@@ -548,6 +560,7 @@ impl Batcher<'_> {
         commands: &[Command],
         tint: Color,
         transform: Affine2,
+        scissor: Option<Scissor>,
         enable_msaa: bool,
     ) {
         let Some(local_rect) = self.compute_bouding_rect(commands) else {
@@ -598,18 +611,44 @@ impl Batcher<'_> {
         self.set_target(old_target);
         self.set_source(Source::Intermediate(intermediate));
 
-        self.transform_stack.push(Affine2::IDENTITY);
-        self.add_quad(Quad {
-            min: rect.min,
-            max: rect.max,
-            local_min: Vec2::ZERO,
-            local_max: Vec2::ZERO,
-            tex_min: Vec2::ZERO,
-            tex_max: Vec2::ONE,
-            color: tint.into(),
-            instance_id: INSTANCE_FILL,
-        });
-        self.transform_stack.pop();
+        match scissor {
+            Some(scissor) => {
+                let instance_id = if scissor.corner_radii == CornerRadii::default() {
+                    INSTANCE_FILL
+                } else {
+                    self.add_instance(Instance {
+                        corner_radii: scissor.corner_radii.into(),
+                        ..Default::default()
+                    })
+                };
+
+                self.add_quad(Quad {
+                    min: scissor.pos,
+                    max: scissor.pos + scissor.size,
+                    local_min: Vec2::ZERO,
+                    local_max: Vec2::ZERO,
+                    tex_min: Vec2::ZERO,
+                    tex_max: Vec2::ONE,
+                    color: tint.into(),
+                    instance_id,
+                });
+            }
+
+            None => {
+                self.transform_stack.push(Affine2::IDENTITY);
+                self.add_quad(Quad {
+                    min: rect.min,
+                    max: rect.max,
+                    local_min: Vec2::ZERO,
+                    local_max: Vec2::ZERO,
+                    tex_min: Vec2::ZERO,
+                    tex_max: Vec2::ONE,
+                    color: tint.into(),
+                    instance_id: INSTANCE_FILL,
+                });
+                self.transform_stack.pop();
+            }
+        }
     }
 
     fn cmd_fill_path(&mut self, path: &FillPath) {

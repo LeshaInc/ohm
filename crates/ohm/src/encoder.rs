@@ -384,6 +384,12 @@ impl LayerEncoder<'_, '_, '_> {
 
         self
     }
+
+    /// Specifies the scissor of this layer.
+    pub fn scissor(mut self, scissor: impl Into<Scissor>) -> Self {
+        self.scissor = Some(scissor.into());
+        self
+    }
 }
 
 impl<'g, 's> Deref for LayerEncoder<'_, 'g, 's> {
