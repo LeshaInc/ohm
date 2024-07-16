@@ -833,8 +833,11 @@ impl RendererContext {
 
             let target = batch.target;
             let clear = batch.clear;
+            let msaa_resolve = batch.msaa_resolve;
 
-            while let Some(batch) = batches.next_if(|b| b.clear == clear && b.target == target) {
+            while let Some(batch) = batches.next_if(|b| {
+                b.clear == clear && b.target == target && b.msaa_resolve == msaa_resolve
+            }) {
                 if batch.index_range.is_empty() {
                     continue;
                 }

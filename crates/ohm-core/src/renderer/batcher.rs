@@ -235,7 +235,14 @@ impl Batcher<'_> {
                 true,
             );
         } else {
-            self.dispatch_commands(draw_list.commands);
+            self.draw_intermediate_layer(
+                draw_list.commands,
+                Color::WHITE,
+                Affine2::IDENTITY,
+                None,
+                false,
+            );
+            // self.dispatch_commands(draw_list.commands);
         }
 
         self.flush();
@@ -345,6 +352,11 @@ impl Batcher<'_> {
                     let is_no_tint = layer.tint == Color::WHITE;
                     let is_compatible_scissor = layer.scissor.is_none();
                     let is_fast_path = is_no_tint && is_compatible_scissor;
+
+                    let mat2 = layer.transform.matrix2;
+                    if is_fast_path && mat2.col(0).y.abs() > 1e-5 && mat2.col(1).x.abs() > 1e-5 {
+                        return true;
+                    }
 
                     if is_fast_path && Self::should_enable_msaa(layer.commands) {
                         return true;
@@ -471,11 +483,17 @@ impl Batcher<'_> {
         tex_min -= (rect_min - min) * tex_size / rect.size;
         tex_max += (max - rect_max) * tex_size / rect.size;
 
+        let padding = self
+            .transform_stack
+            .last()
+            .map(|t| 2.0 / t.transform_vector2(Vec2::X).length());
+        let padding = Vec2::splat(padding.unwrap_or(2.0));
+
         self.add_quad(Quad {
-            min,
-            max,
-            local_min: min - rect.pos,
-            local_max: max - rect.pos,
+            min: min - padding,
+            max: max + padding,
+            local_min: min - rect.pos - padding,
+            local_max: max - rect.pos + padding,
             tex_min,
             tex_max,
             tex_transform: None,
@@ -636,17 +654,14 @@ impl Batcher<'_> {
                     local_max: scissor.size,
                     tex_min: Vec2::ZERO,
                     tex_max: Vec2::ONE,
-                    tex_transform: Some(
-                        Affine2::from_mat2_translation(
-                            Mat2::from_diagonal(scissor.size / rect.size()),
-                            (cur_transform.transform_point2(scissor.pos) - rect.min) / rect.size(),
-                        ) * cur_transform,
-                    ),
+                    tex_transform: Some(Affine2::from_mat2_translation(
+                        Mat2::from_diagonal(scissor.size / rect.size()) * cur_transform.matrix2,
+                        (cur_transform.transform_point2(scissor.pos) - rect.min) / rect.size(),
+                    )),
                     color: tint.into(),
                     instance_id,
                 });
             }
-
             None => {
                 self.transform_stack.push(Affine2::IDENTITY);
                 self.add_quad(Quad {
