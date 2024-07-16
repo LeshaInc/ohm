@@ -14,6 +14,9 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
+    text_buffer.set_max_width(size.x - 100.0);
+    text_buffer.compute_layout(encoder.font_db, encoder.text_shaper);
+
     encoder.rect(vec2(0.0, 0.0), size).color(Color::WHITE);
 
     encoder
@@ -21,18 +24,22 @@ fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
         .color(Color::TRANSPARENT)
         .border(Color::rgb(1.0, 0.0, 0.0), 1.0);
 
-    text_buffer.set_max_width(size.x - 100.0);
-    text_buffer.compute_layout(encoder.font_db, encoder.text_shaper);
     encoder.text(vec2(50.0, 50.0), text_buffer);
+
+    encoder
+        .rect(vec2(500.0, 75.0), vec2(300.0, 300.0))
+        .color(Color::TRANSPARENT)
+        .border(Color::rgb(0.0, 0.0, 1.0), 1.0)
+        .corner_radii(CornerRadii::new_equal(30.0));
 
     {
         let mut layer = encoder
             .layer()
             .tint(Color::rgba(0.5, 0.5, 0.5, 0.5))
             .scissor(Scissor {
-                pos: vec2(500.0, 0.0),
+                pos: vec2(500.0, 75.0),
                 size: vec2(300.0, 300.0),
-                corner_radii: CornerRadii::default(),
+                corner_radii: CornerRadii::new_equal(30.0),
             })
             .transform(Affine2::from_scale_angle_translation(
                 vec2(2.0, 2.0),

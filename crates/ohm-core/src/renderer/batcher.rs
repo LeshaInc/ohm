@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use super::{Mesh, PathCache, SurfaceId};
 use crate::image::ImageFormat;
-use crate::math::{Affine2, Rect, UVec2, Vec2, Vec4};
+use crate::math::{Affine2, Mat2, Rect, UVec2, Vec2, Vec4};
 use crate::text::{GlyphKey, SubpixelBin};
 use crate::texture::{TextureCache, TextureId};
 use crate::{
@@ -46,6 +46,7 @@ struct Quad {
     local_max: Vec2,
     tex_min: Vec2,
     tex_max: Vec2,
+    tex_transform: Option<Affine2>,
     color: Vec4,
     instance_id: u32,
 }
@@ -424,6 +425,7 @@ impl Batcher<'_> {
                 local_max: Vec2::ZERO,
                 tex_min,
                 tex_max,
+                tex_transform: None,
                 color: color.into(),
                 instance_id: INSTANCE_FILL,
             });
@@ -476,6 +478,7 @@ impl Batcher<'_> {
             local_max: max - rect.pos,
             tex_min,
             tex_max,
+            tex_transform: None,
             color: color.into(),
             instance_id,
         });
@@ -519,6 +522,7 @@ impl Batcher<'_> {
             local_max: Vec2::ZERO,
             tex_min,
             tex_max,
+            tex_transform: None,
             color: color.into(),
             instance_id,
         });
@@ -617,18 +621,27 @@ impl Batcher<'_> {
                     INSTANCE_FILL
                 } else {
                     self.add_instance(Instance {
+                        size: scissor.size,
                         corner_radii: scissor.corner_radii.into(),
                         ..Default::default()
                     })
                 };
 
+                let cur_transform = self.transform_stack.last().copied().unwrap_or_default();
+
                 self.add_quad(Quad {
                     min: scissor.pos,
                     max: scissor.pos + scissor.size,
                     local_min: Vec2::ZERO,
-                    local_max: Vec2::ZERO,
+                    local_max: scissor.size,
                     tex_min: Vec2::ZERO,
                     tex_max: Vec2::ONE,
+                    tex_transform: Some(
+                        Affine2::from_mat2_translation(
+                            Mat2::from_diagonal(scissor.size / rect.size()),
+                            (cur_transform.transform_point2(scissor.pos) - rect.min) / rect.size(),
+                        ) * cur_transform,
+                    ),
                     color: tint.into(),
                     instance_id,
                 });
@@ -643,6 +656,7 @@ impl Batcher<'_> {
                     local_max: Vec2::ZERO,
                     tex_min: Vec2::ZERO,
                     tex_max: Vec2::ONE,
+                    tex_transform: None,
                     color: tint.into(),
                     instance_id: INSTANCE_FILL,
                 });
@@ -818,31 +832,44 @@ impl Batcher<'_> {
     }
 
     fn add_quad(&mut self, quad: Quad) {
+        let mut tex_coords = [
+            Vec2::new(quad.tex_min.x, quad.tex_min.y),
+            Vec2::new(quad.tex_max.x, quad.tex_min.y),
+            Vec2::new(quad.tex_max.x, quad.tex_max.y),
+            Vec2::new(quad.tex_min.x, quad.tex_max.y),
+        ];
+
+        if let Some(transform) = quad.tex_transform {
+            for v in &mut tex_coords {
+                *v = transform.transform_point2(*v);
+            }
+        }
+
         let a = self.add_vertex(Vertex {
             pos: Vec2::new(quad.min.x, quad.min.y),
             local_pos: Vec2::new(quad.local_min.x, quad.local_min.y),
-            tex: Vec2::new(quad.tex_min.x, quad.tex_min.y),
+            tex: tex_coords[0],
             color: quad.color,
             instance_id: quad.instance_id,
         });
         let b = self.add_vertex(Vertex {
             pos: Vec2::new(quad.max.x, quad.min.y),
             local_pos: Vec2::new(quad.local_max.x, quad.local_min.y),
-            tex: Vec2::new(quad.tex_max.x, quad.tex_min.y),
+            tex: tex_coords[1],
             color: quad.color,
             instance_id: quad.instance_id,
         });
         let c = self.add_vertex(Vertex {
             pos: Vec2::new(quad.max.x, quad.max.y),
             local_pos: Vec2::new(quad.local_max.x, quad.local_max.y),
-            tex: Vec2::new(quad.tex_max.x, quad.tex_max.y),
+            tex: tex_coords[2],
             color: quad.color,
             instance_id: quad.instance_id,
         });
         let d = self.add_vertex(Vertex {
             pos: Vec2::new(quad.min.x, quad.max.y),
             local_pos: Vec2::new(quad.local_min.x, quad.local_max.y),
-            tex: Vec2::new(quad.tex_min.x, quad.tex_max.y),
+            tex: tex_coords[3],
             color: quad.color,
             instance_id: quad.instance_id,
         });
