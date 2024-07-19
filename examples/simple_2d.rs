@@ -14,17 +14,6 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
-    text_buffer.set_max_width(size.x - 100.0);
-    text_buffer.compute_layout(encoder.font_db, encoder.text_shaper);
-
-    let mut encoder = encoder
-        .layer()
-        .transform(Affine2::from_scale_angle_translation(
-            Vec2::new(1.0, 1.0),
-            7.0f32.to_radians(),
-            Vec2::new(0.0, 0.0),
-        ));
-
     encoder.rect(vec2(0.0, 0.0), size).color(Color::WHITE);
 
     encoder
@@ -32,6 +21,8 @@ fn paint(encoder: &mut Encoder, size: Vec2, text_buffer: &mut TextBuffer) {
         .color(Color::TRANSPARENT)
         .border(Color::rgb(1.0, 0.0, 0.0), 1.0);
 
+    text_buffer.set_max_width(size.x - 100.0);
+    text_buffer.compute_layout(encoder.font_db, encoder.text_shaper);
     encoder.text(vec2(50.0, 50.0), text_buffer);
 
     encoder
