@@ -2,18 +2,16 @@ use std::ops::{Deref, DerefMut};
 
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
-use ohm_core::image::ImageHandle;
-use ohm_core::{StrokeOptions, StrokePath};
 
 use crate::asset::AssetPath;
-use crate::image::ImageId;
+use crate::image::{ImageHandle, ImageId};
 use crate::math::{Affine2, Rect, Vec2};
 use crate::renderer::SurfaceId;
 use crate::text::{FontDatabase, TextBuffer, TextShaper};
 use crate::texture::{MipmapMode, TextureCache};
 use crate::{
     Border, ClearRect, Color, Command, CornerRadii, DrawGlyph, DrawLayer, DrawList, DrawRect, Fill,
-    FillImage, FillOptions, FillPath, Path, Scissor, Shadow,
+    FillImage, FillOptions, FillPath, Path, Scissor, Shadow, StrokeOptions, StrokePath,
 };
 
 /// Scratch allocations, used by [`Encoder`].

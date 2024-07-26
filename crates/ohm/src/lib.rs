@@ -157,8 +157,6 @@ pub mod renderer {
     pub use ohm_wgpu::WgpuRenderer;
 }
 
-mod encoder;
 mod graphics;
 
-pub use self::encoder::{Encoder, EncoderScratch};
 pub use self::graphics::Graphics;

@@ -1,7 +1,6 @@
-#![warn(missing_docs)]
-
 //! Core types and traits for Ohm (2D rendering library).
 
+mod encoder;
 pub mod math;
 pub mod renderer;
 
@@ -16,6 +15,7 @@ pub mod texture;
 
 pub use self::color::*;
 pub use self::corner_radii::*;
+pub use self::encoder::*;
 pub use self::error::*;
 use self::image::ImageId;
 pub use self::path::*;

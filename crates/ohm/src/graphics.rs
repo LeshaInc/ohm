@@ -1,14 +1,13 @@
 use ohm_core::renderer::PathCache;
 
 use crate::asset::AssetSources;
-use crate::encoder::EncoderScratch;
 use crate::image::ImageDecoders;
 use crate::renderer::{Renderer, SurfaceId};
 use crate::text::{
     DefaultFontDatabase, DefaultTextShaper, FontDatabase, FontRasterizers, TextShaper,
 };
 use crate::texture::TextureCache;
-use crate::{DrawList, Encoder, Result};
+use crate::{DrawList, Encoder, EncoderScratch, Result};
 
 /// A convenience structure, encompassing all graphics related objects.
 ///
